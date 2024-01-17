@@ -1,14 +1,9 @@
-import sys
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QPushButton, QWidget, QSlider, QCheckBox
+from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QPushButton, QWidget, QSlider
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer
-
-import multiple_csv
-import three_d_plot
-import user_config
 
 class WorkerThread(QThread):
     update_signal = pyqtSignal(int)
@@ -24,7 +19,7 @@ class WorkerThread(QThread):
             self.fargs[0].fig,
             self.func,
             frames=self.fargs[1],
-            fargs=(self.fargs[0], self.fargs[2], self.fargs[3]),  # Include only the required arguments
+            fargs=(self.fargs[0], self.fargs[2], self.fargs[3]),
             interval=self.interval,
             repeat=False
         )

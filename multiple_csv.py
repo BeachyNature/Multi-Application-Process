@@ -1,5 +1,4 @@
 import os
-import sys
 import pandas as pd
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
@@ -7,7 +6,7 @@ from PyQt5.QtCore import *
 
 import load_tables
 
-class FileDialogExample(QWidget):
+class FileDialog(QWidget):
     def __init__(self, parent = None):
         super().__init__(parent)
         self._bool = False

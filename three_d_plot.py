@@ -1,4 +1,3 @@
-import sys
 import numpy as np
 from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QSlider, QPushButton, QToolBar
 from PyQt5.QtCore import Qt, QTimer

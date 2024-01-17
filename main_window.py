@@ -28,7 +28,7 @@ class MainWindow(QMainWindow):
 
         # Checkboxes
         self.check_dict = {}
-        self.check_names = {'CSV Loader': multiple_csv.FileDialogExample(),
+        self.check_names = {'CSV Loader': multiple_csv.FileDialog(),
                             '3D Plotter': three_d_plot.ThreeDPlot(),
                             '2D Plotter': animated_lineplot.MainWindow(),
                             'Multi-Plotter': multiple_plots.StaticPlots(),

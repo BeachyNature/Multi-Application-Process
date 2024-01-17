@@ -27,7 +27,6 @@ class WorkerThread(QThread):
         self.animation._stop = not self.fargs[0].animation_running
         self.animation._start()
 
-
 class MatplotlibWidget(QWidget):
     def __init__(self, parent=None):
         super(MatplotlibWidget, self).__init__(parent)
@@ -82,13 +81,11 @@ class MatplotlibWidget(QWidget):
     def stop_animation(self):
         self.animation_running = False
 
-
-class MainWindow(QMainWindow):
+class MainWindow(QWidget):
     def __init__(self):
         super(MainWindow, self).__init__()
 
         self.central_widget = MatplotlibWidget(self)
-        self.setCentralWidget(self.central_widget)
 
         self.start_button = QPushButton('Start', self)
         self.start_button.clicked.connect(self.start_animation)
@@ -118,10 +115,8 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(self.central_widget)
         main_layout.addWidget(self.slider)
 
-        widget = QWidget(self)
-        widget.setLayout(main_layout)
+        self.setLayout(main_layout)
         self.setGeometry(100, 100, 1600, 900)
-        self.setCentralWidget(widget)
 
     # Starts tbe 2D Animation
     def start_animation(self):

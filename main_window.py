@@ -5,6 +5,7 @@ import animated_lineplot
 import three_d_plot
 import multiple_csv
 import multiple_plots
+import time
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -28,12 +29,13 @@ class MainWindow(QMainWindow):
 
         # Checkboxes
         self.check_dict = {}
-        self.check_names = {'CSV Loader': multiple_csv.FileDialog(),
-                            '3D Plotter': three_d_plot.ThreeDPlot(),
-                            '2D Plotter': animated_lineplot.MainWindow(),
-                            'Multi-Plotter': multiple_plots.StaticPlots(),
+        self.check_names = {'CSV Loader': multiple_csv.FileDialog,
+                            '3D Plotter': three_d_plot.ThreeDPlot,
+                            '2D Plotter': animated_lineplot.MainWindow,
+                            'Multi-Plotter': multiple_plots.StaticPlots,
                             'Video Replayer': None,
-                            'Plot Configure': None}
+                            'Plot Configure': None,
+                            'Static Plot': None}
         
         self.layout.addWidget(self.user_setting_btn)
         self.layout.addWidget(self.launch_btn)
@@ -56,9 +58,9 @@ class MainWindow(QMainWindow):
                 checkboxes = self.check_dict[key][0]
                 checkboxes.toggled.connect(self.check_button_act)
                 self.layout_main.addWidget(checkboxes)
+        self._bool = True
 
     def run_preferences(self):
-        self._bool = True
         self.pre_window.setLayout(self.layout_main)
         self.pre_window.setGeometry(300, 300, 300, 150)
         self.pre_window.setWindowTitle('User Preference Window')
@@ -71,12 +73,13 @@ class MainWindow(QMainWindow):
 
     def run_files(self):
         check_json = update_file()
-        for key in check_json:
-            if check_json[key] == True:
-                self.run = self.check_dict[key][2]
-                if self.run is not None:
-                    self.run.show()
 
+        self.instances_to_show = [
+            class_type() for key, class_type in self.check_names.items() if check_json.get(key) and callable(class_type)
+        ]
+
+        for instance in self.instances_to_show:
+            instance.show()
 
 """
 Gets the user configuration settings, accessible from other classes

@@ -130,9 +130,7 @@ class ThreeDPlot(QMainWindow):
         if self.value:
             self.value = False
             self.zoom_in_button.setStyleSheet('')
-            print("NOT EPIC")
         else:
-            print("EPIC")
             self.value = True
             color = QColor(0, 255, 0)  # Set color to green
             self.zoom_in_button.setStyleSheet('background-color: {}'.format(color.name()))

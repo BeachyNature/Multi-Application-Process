@@ -1,7 +1,8 @@
 import sys
 import pandas as pd
 from PyQt5.QtCore import Qt, QAbstractTableModel
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableView, QCheckBox, QScrollArea, QTabWidget
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableView, QCheckBox, QScrollArea, QTabWidget, QAbstractSlider
+
 
 class DataFrameTableModel(QAbstractTableModel):
     def __init__(self, dataframe, column_checkboxes, parent=None):
@@ -39,10 +40,6 @@ class DataFrameTableModel(QAbstractTableModel):
         self.visible_rows += 100
         self.visible_rows = min(self.visible_rows, len(self.dataframe))
 
-    def fetch_more_data(self):
-        # Implement fetching more data
-        pass
-
     def canFetchMore(self, index):
         return self.visible_rows < len(self.dataframe)
 
@@ -50,7 +47,6 @@ class DataFrameTableModel(QAbstractTableModel):
         remaining_rows = len(self.dataframe) - self.visible_rows
         rows_to_fetch = min(100, remaining_rows)
         self.beginInsertRows(index, self.visible_rows, self.visible_rows + rows_to_fetch - 1)
-        self.fetch_more_data()
         self.visible_rows += rows_to_fetch
         self.endInsertRows()
 
@@ -133,6 +129,8 @@ class ExpandableText(QWidget):
             model.fetch_more_data()
             model.update_visible_rows()
 
+from PyQt5.QtWidgets import QTabWidget, QSplitter
+
 class DataFrameViewer(QWidget):
     def __init__(self, data):
         super().__init__()
@@ -142,11 +140,31 @@ class DataFrameViewer(QWidget):
     def init_ui(self, data):
         main_layout = QVBoxLayout()
 
+        self.splitter = QSplitter(Qt.Horizontal)  # Use QSplitter to arrange tab widgets side by side
+
         self.tab_widget = QTabWidget()
         self.tab_widget.tab_dict = {}
 
         scroll_area = QScrollArea()
         labels_layout = QVBoxLayout()
+
+        # df1 = pd.DataFrame({
+        #     'A': range(1, 1001),
+        #     'B': range(1001, 2001),
+        #     'C': range(2001, 3001),
+        #     'D': range(3001, 4001),
+        #     'E': range(4001, 5001)
+        # })
+        # df1.name = 'Large DataFrame 1'
+
+        # df2 = pd.DataFrame({
+        #     'X': range(5001, 6001),
+        #     'Y': range(6001, 7001),
+        #     'Z': range(7001, 8001),
+        #     'W': range(8001, 9001),
+        #     'V': range(9001, 10001)
+        # })
+        # df2.name = 'Large DataFrame 2'
 
         for csv_name, df in data.items():
             text_widget = ExpandableText(df, csv_name, self.tab_widget)
@@ -158,6 +176,37 @@ class DataFrameViewer(QWidget):
         scroll_area.setWidgetResizable(True)
 
         main_layout.addWidget(scroll_area)
-        main_layout.addWidget(self.tab_widget)
+
+        self.splitter.addWidget(self.tab_widget)
+        self.splitter.addWidget(QTabWidget())  # Initially add an empty tab widget
+        main_layout.addWidget(self.splitter)
 
         self.setLayout(main_layout)
+
+        self.tab_widget.tabBarDoubleClicked.connect(self.load_table_double_click)
+
+    def load_table_double_click(self, index):
+        tab_name = self.tab_widget.tabText(index)
+        if tab_name in self.tab_widget.tab_dict:
+            model = DataFrameTableModel(self.tab_widget.tab_dict[tab_name].model().dataframe,
+                                        self.tab_widget.tab_dict[tab_name].model().column_checkboxes)
+            tab = QTableView()
+            tab.setModel(model)
+
+            # Create a new tab widget and add the tab to it
+            new_tab_widget = QTabWidget()
+            new_tab_widget.addTab(tab, tab_name + "_Duplicate")
+
+            # Get the index of the old tab widget
+            old_tab_widget_index = self.splitter.indexOf(self.tab_widget)
+
+            # Remove the tab from the old tab widget
+            self.tab_widget.removeTab(index)
+
+            # If there are no more tabs in the old tab widget, remove the old tab widget itself
+            if self.tab_widget.count() == 0:
+                self.splitter.removeWidget(self.tab_widget)
+
+            # Add the new tab widget to the QSplitter at the same index as the old tab widget
+            self.splitter.insertWidget(old_tab_widget_index, new_tab_widget)
+

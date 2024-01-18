@@ -1,11 +1,11 @@
 import os
+import sys
 import pandas as pd
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
 
-import load_tables
-
+import qabstractionmodel
 class FileDialog(QWidget):
     def __init__(self, parent = None):
         super().__init__(parent)
@@ -29,7 +29,7 @@ class FileDialog(QWidget):
         self.setWindowTitle('CSV Loader')
 
     def show_file_dialog(self):
-
+        self.dict = {}
         file_dialog = QFileDialog()
         self.tab_widget = QTabWidget()
 
@@ -63,7 +63,8 @@ class FileDialog(QWidget):
                         self.process_csvs(file_path, csv_name, idx)
         
         # Run the QAbstractionTable
-        self.run_dialog()
+        self.epic = qabstractionmodel.DataFrameViewer(self.dict)
+        self.epic.show()
 
         # TEST
         # print(self.create_table.__doc__)
@@ -83,19 +84,7 @@ class FileDialog(QWidget):
     Load the dataframes into seperate table that creates tabs for each item
     """
     def create_table(self, df, csv_name, idx):
-        self.layout = QVBoxLayout()
-        self.layout.addWidget(self.tab_widget)
-
-        tab = QWidget()
-        tab_layout = QVBoxLayout(tab)
-        self.tab_widget.addTab(tab, csv_name)
-
-        # Make tabs red when empty
-        if df.empty:
-            self.tab_widget.tabBar().setTabTextColor(idx, QColor(253, 27, 27))
-
-        # Need to make table model, different file to load in each dataframe
-        load_tables.DataTables(df, csv_name, tab_layout)
+        self.dict[csv_name] = df  
 
     def run_dialog(self):
         dialog = QDialog()
@@ -105,9 +94,9 @@ class FileDialog(QWidget):
     def run_all_csv(self, checked):
         self._bool = checked
 
-# if __name__ == '__main__':
-#     app = QApplication(sys.argv)
-#     ex = FileDialogExample()
-#     ex.show()
-#     sys.exit(app.exec_())
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    ex = FileDialog()
+    ex.show()
+    sys.exit(app.exec_())
 

@@ -94,9 +94,9 @@ class FileDialog(QWidget):
     def run_all_csv(self, checked):
         self._bool = checked
 
-# if __name__ == '__main__':
-#     app = QApplication(sys.argv)
-#     ex = FileDialog()
-#     ex.show()
-#     sys.exit(app.exec_())
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    ex = FileDialog()
+    ex.show()
+    sys.exit(app.exec_())
 

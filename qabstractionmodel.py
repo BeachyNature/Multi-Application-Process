@@ -1,8 +1,8 @@
 import sys
 import pandas as pd
 from PyQt5.QtCore import Qt, QAbstractTableModel
-from PyQt5.QtGui import QPalette, QColor
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableView, QCheckBox, QScrollArea, QTabWidget, QSplitter
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,\
+                            QTableView, QCheckBox, QScrollArea, QTabWidget, QSplitter, QFileDialog, QAbstractItemView
 
 class DataFrameTableModel(QAbstractTableModel):
     def __init__(self, dataframe, column_checkboxes, parent=None):
@@ -53,7 +53,6 @@ class DataFrameTableModel(QAbstractTableModel):
     def get_dataframe(self):
         visible_columns = [col for col, checkbox in self.column_checkboxes.items() if checkbox.isChecked()]
         return pd.DataFrame(self.dataframe[visible_columns])
-
 
 class ExpandableText(QWidget):
     def __init__(self, dataframe, csv_name, tab_widget, index, splitter, dict):
@@ -134,11 +133,14 @@ class ExpandableText(QWidget):
         tab_name = self.csv_name
         if tab_name not in self.tab_widget.tab_dict:
             model = DataFrameTableModel(self.dataframe, self.column_checkboxes)
+
+            # Apply new model
             table = QTableView()
             table.setModel(model)
-
+            table.setSelectionMode(QAbstractItemView.ExtendedSelection)
             self.dict[table] = model
 
+            # Make tab
             self.tab_widget.addTab(table, self.csv_name)
             self.tab_widget.tab_dict[self.csv_name] = table
 
@@ -159,7 +161,11 @@ class ExpandableText(QWidget):
         for checkbox in self.column_checkboxes.values():
             checkbox.stateChanged.connect(model.update_visible_columns)
 
-
+    def highlightSelectedRows(self):
+        selected_indexes = self.selectionModel().selectedRows()
+        print(f"{selected_indexes = }")
+        for index in selected_indexes:
+            self.setRowHidden(index.row(), False)
 
 class DataFrameViewer(QWidget):
     def __init__(self, data):

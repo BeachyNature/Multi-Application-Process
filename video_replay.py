@@ -26,6 +26,8 @@ class VideoPlayer(QWidget):
         self.play_pause_button = QPushButton("Start Video", self)
         self.play_pause_button.clicked.connect(self.toggle_play_pause)
 
+        self.playback_speed_label = QLabel("Playback Speed: 1x", self)
+
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_frame)
         self.update_slider_duration()
@@ -54,6 +56,7 @@ class VideoPlayer(QWidget):
             h_layout.addWidget(label)
 
         layout.addLayout(h_layout)
+        layout.addWidget(self.playback_speed_label)
         layout.addWidget(self.playback_slider)
         layout.addWidget(self.play_pause_button)
 
@@ -116,6 +119,16 @@ class VideoPlayer(QWidget):
 
     def handle_text_captured(self, text):
         self.main_app.text_capture_window.append_text(text)
+
+    def set_playback_speed(self, speed):
+        self.playback_speed = speed
+        if self.playing:
+            self.timer.setInterval(int(self.timer_interval / speed))
+        self.playback_speed_label.setText(f"Playback Speed: {speed}x")
+
+    def reset_playback_speed(self):
+        self.set_playback_speed(1)  # Reset speed to normal
+        self.playback_speed_label.clear()
 
 class VideoPlayerApp(QMainWindow):
     def __init__(self, video_paths):

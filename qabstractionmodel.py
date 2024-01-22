@@ -62,7 +62,7 @@ class DataFrameTableModel(QAbstractTableModel):
 class ExpandableText(QWidget):
     def __init__(self, dataframe, csv_name, tab_widget, index, splitter, dict):
         super().__init__()
-
+        self.epic = {}
         self.is_expanded = False
         self.first_split = False
         self.dataframe = dataframe
@@ -102,19 +102,25 @@ class ExpandableText(QWidget):
         else:
             self.check_button.setStyleSheet('border: none; color: red; font-size: 24px;')
 
+        # Run the toggle column function
         self.check_button.clicked.connect(self.toggle_expansion)
-        button_layout.addWidget(self.check_button, alignment=Qt.AlignTop)
 
+        # Setup the column selection buttons
         self.options_widget = QWidget()
         options_layout = QVBoxLayout(self.options_widget)
         for checkbox in self.column_checkboxes.values():
             options_layout.addWidget(checkbox)
 
+        button_layout.addWidget(self.check_button, alignment=Qt.AlignTop)
         button_layout.addWidget(self.options_widget)
         layout.addLayout(button_layout)
         layout.addStretch()
         self.setLayout(layout)
 
+
+    """
+    Setups of the column selection items
+    """
     def toggle_expansion(self):
         self.is_expanded = not self.is_expanded
         self.check_button.setText(self.csv_name + " -" if self.is_expanded else  self.csv_name + " +")
@@ -125,6 +131,10 @@ class ExpandableText(QWidget):
 
         self.setup_data()
 
+
+    """
+    Batch loading based on user scrolling
+    """
     def load_more_data(self):
         tab = self.tab_widget.tab_dict[self.csv_name]
         model = tab.model()
@@ -134,9 +144,12 @@ class ExpandableText(QWidget):
                 model.fetchMore()
                 model.update_visible_rows()
 
+
+    """
+    Setup of the data in their respective tables and tabs
+    """
     def setup_data(self):
-        self.epic = {}
-        self.nice = []
+
         tab_name = self.csv_name
         if tab_name not in self.tab_widget.tab_dict:
             model = DataFrameTableModel(self.dataframe, self.column_checkboxes)
@@ -170,10 +183,18 @@ class ExpandableText(QWidget):
                 selection_model = table_widget.selectionModel()
                 selection_model.selectionChanged.connect(self.handle_selection_changed)
     
+    
+    """
+    Toggle the columns that the user selects in the options menu
+    """
     def check_status(self, model):
         for checkbox in self.column_checkboxes.values():
             checkbox.stateChanged.connect(model.update_visible_columns)
 
+
+    """
+    Create a dictionary for what the user selects in the table of interest
+    """
     def handle_selection_changed(self):
 
         # Get the correct table
@@ -200,14 +221,15 @@ class ExpandableText(QWidget):
 
         # dataframe = pd.DataFrame(self.epic)
         print(f"{self.epic = }")
-        # self.nice.append(current_tab_name)
 
         # # selected_data = model.selected_data
         # selected_dataframe = pd.DataFrame(self.epic)
         # print(selected_dataframe)
 
-        
-        
+
+"""
+Main Viewing Window of the loaded dataframes
+""" 
 class DataFrameViewer(QWidget):
     def __init__(self, data):
         super().__init__()
@@ -272,6 +294,10 @@ class DataFrameViewer(QWidget):
         self.tab_widget.setTabsClosable(True)
         self.tab_widget.tabBarDoubleClicked.connect(self.load_table_double_click)
     
+
+    """
+    Get the current dataframe of the modified table, hidden columns and all
+    """
     def get_current_tab_dataframe(self):
         current_index = self.tab_widget.currentIndex()
         if current_index != -1:
@@ -282,6 +308,7 @@ class DataFrameViewer(QWidget):
                     return model.get_dataframe()
         return pd.DataFrame()  # Return an empty DataFrame if no data is available
 
+
     """
     This allows for the user to double click on the tab and be able to compare a tab on the side
     """
@@ -291,8 +318,6 @@ class DataFrameViewer(QWidget):
         if self.tab_widget.count() > 1:
             self.incr += 1
             tab_name = self.tab_widget.tabText(index)
-            self.tab_widget.tab_dict.pop(tab_name)
-            self.tab_widget.removeTab(index)
 
             # Create new tab
             new_tab_widget = QTabWidget()
@@ -311,32 +336,25 @@ class DataFrameViewer(QWidget):
             else:
                 print("Cannot Compare, dataframe is empty!")
     
-    # Remove the splitter when removed speicifc tab
+            # Remove tab that user wants to compare
+            self.tab_widget.tab_dict.pop(tab_name)
+            self.tab_widget.removeTab(index)
+
+    """
+    Make all tabs after the first one closable
+    """
     def tabCloseRequested(self, index):
         if self.tab_widget.count() > 1:
             self.table_split.widget(1).setParent(None)
+
 
     """
     User can save a csv based on what they have selected in a table
     """
     def save_csv(self):
+        print("Saved CSV!")
         pass
-        # # Get the correct table
-        # current_index = self.tab_widget.currentIndex()
-        # current_tab_name = self.tab_widget.tabText(current_index)
-        # table = self.tab_widget.tab_dict[current_tab_name]
-        # model = self.model_dict[table]
 
-        # selected_indexes = table.selectionModel().selectedIndexes()
-        # for index in selected_indexes:
-        #     row = index.row()
-        #     col = index.column()
-        #     columnName = model.getColumnName(col)
-        #     index = model.index(row, col)
-        #     value = model.data(index)
-
-        #     print(f"{columnName = }")
-        #     print(f"{value = }")
         # nice = ExpandableText.handle_selection_changed(ExpandableText)
         # print(nice)
         # df.to_csv(file_name, encoding='utf-8', index=False)

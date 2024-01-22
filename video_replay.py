@@ -6,6 +6,8 @@ from PyQt5.QtGui import QPixmap, QImage
 from PIL import Image
 import pytesseract
 
+# pytesseract.pytesseract.tesseract_cmd = "C:/Program Files/Tesseract-OCR/tesseract.exe"
+
 class TextCaptureThread(QThread):
     textCaptured = pyqtSignal(str)
 
@@ -172,17 +174,51 @@ class VideoPlayerApp(QMainWindow):
         open_action.triggered.connect(self.toggle_text_capture_window)
         file_menu.addAction(open_action)
 
+        playback_menu = menubar.addMenu('Playback')
+        play_action = QAction('Play', self)
+        play_action.triggered.connect(self.start_playback)
+        playback_menu.addAction(play_action)
+
+        fast_forward_action = QAction('Fast Forward', self)
+        fast_forward_action.triggered.connect(self.increment_playback_speed)
+        playback_menu.addAction(fast_forward_action)
+
+        slow_down_action = QAction('Slow Down', self)
+        slow_down_action.triggered.connect(self.decrement_playback_speed)
+        playback_menu.addAction(slow_down_action)
+
+        reset_speed_action = QAction('Reset Speed', self)
+        reset_speed_action.triggered.connect(self.reset_playback_speed)
+        playback_menu.addAction(reset_speed_action)
+
     def toggle_text_capture_window(self):
         current_visibility = self.text_capture_window.isVisible()
         self.text_capture_window.setVisible(not current_visibility)
 
     def handle_text_captured(self, text):
         self.text_capture_window.append_text(text)
+
+    def start_playback(self):
+        # Add logic to start playback
+        pass
+
+    def increment_playback_speed(self):
+        current_speed = self.video_player.playback_speed
+        self.video_player.set_playback_speed(current_speed + 1)
+
+    def decrement_playback_speed(self):
+        current_speed = self.video_player.playback_speed
+        self.video_player.set_playback_speed(max(1, current_speed - 1))
+
+    def reset_playback_speed(self):
+        self.video_player.reset_playback_speed()
+
+
 if __name__ == '__main__':
     app = QApplication(sys.argv)
 
-    video_paths = ["C:/Users/tycon/Downloads/SampleVideo_1280x720_5mb.mp4",
-                "C:/Users/tycon/Downloads/SampleVideo_1280x720_2mb.mp4",
+    video_paths = ["C:/Users/tycon/Downloads/190144 (720p).mp4",
+                "C:/Users/tycon/Downloads/163333 (720p).mp4",
                 "C:/Users/tycon/Downloads/code_-_32767 (720p).mp4"]
 
     player_app = VideoPlayerApp(video_paths)

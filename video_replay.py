@@ -131,7 +131,6 @@ class VideoPlayer(QWidget):
             self.play_pause_button.setText("Resume")
             self.text_capture_thread.stop_capture()  # Stop text capture thread
 
-
     def set_playback_speed(self, speed):
         self.playback_speed = speed
         if self.playing:
@@ -141,16 +140,22 @@ class VideoPlayer(QWidget):
     def reset_playback_speed(self):
         self.set_playback_speed(1)  # Reset speed to normal
         self.playback_speed_label.clear()
+    
+    def restart_video_action(self):
+        video_reset = [video.set(cv2.CAP_PROP_POS_FRAMES, 0) for video in self.video_captures]
+        # self.video_capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
 class VideoPlayerApp(QMainWindow):
     def __init__(self, video_paths):
         super().__init__()
 
+        # Get thread created, wait for user to open
         self.text_capture_window = TextCaptureWindow()
         self.text_capture_thread = TextCaptureThread(video_captures=[cv2.VideoCapture(video_path, cv2.CAP_FFMPEG) for video_path in video_paths], text_capture_window=self.text_capture_window)
         self.text_capture_thread.textCaptured.connect(self.handle_text_captured)
         self.text_capture_thread.start()
 
+        # Setup main window
         self.video_player = VideoPlayer(video_paths, self.text_capture_thread, self.text_capture_window)
         self.create_menus()
 
@@ -158,7 +163,7 @@ class VideoPlayerApp(QMainWindow):
         central_layout = QVBoxLayout()
 
         central_layout.addWidget(self.video_player)
-        central_layout.addWidget(self.text_capture_window)  # Add TextCaptureWindow to the layout
+        central_layout.addWidget(self.text_capture_window)
 
         central_widget.setLayout(central_layout)
         self.setCentralWidget(central_widget)
@@ -166,6 +171,8 @@ class VideoPlayerApp(QMainWindow):
         self.setGeometry(100, 100, 1200, 600)
         self.setWindowTitle('Video Player')
 
+
+    #TODO Add a restqrt video button
     def create_menus(self):
         menubar = self.menuBar()
 
@@ -178,6 +185,10 @@ class VideoPlayerApp(QMainWindow):
         play_action = QAction('Play', self)
         play_action.triggered.connect(self.start_playback)
         playback_menu.addAction(play_action)
+
+        restart_action = QAction('Restart Playback', self)
+        restart_action.triggered.connect(self.restart_video)
+        playback_menu.addAction(restart_action)
 
         fast_forward_action = QAction('Fast Forward', self)
         fast_forward_action.triggered.connect(self.increment_playback_speed)
@@ -201,6 +212,13 @@ class VideoPlayerApp(QMainWindow):
     def start_playback(self):
         # Add logic to start playback
         pass
+    
+    # Restarts the video when the user selections option
+    def restart_video(self):
+        self.video_player.playing = not self.video_player.playing
+        self.video_player.restart_video_action()
+        self.video_player.playback_slider.setValue(0)
+        self.video_player.play_pause_button.setText("Start Video")
 
     def increment_playback_speed(self):
         current_speed = self.video_player.playback_speed

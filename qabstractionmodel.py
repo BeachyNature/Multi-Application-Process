@@ -27,7 +27,7 @@ class DataFrameTableModel(QAbstractTableModel):
 
     def columnCount(self, parent=None):
         return len(self.visible_columns)
-
+    
     def headerData(self, section, orientation, role=Qt.DisplayRole):
         if role == Qt.DisplayRole:
             if orientation == Qt.Horizontal:
@@ -54,6 +54,11 @@ class DataFrameTableModel(QAbstractTableModel):
         visible_columns = [col for col, checkbox in self.column_checkboxes.items() if checkbox.isChecked()]
         return pd.DataFrame(self.dataframe[visible_columns])
 
+    def getColumnName(self, columnIndex):
+        if 0 <= columnIndex < len(self.dataframe.columns):
+            return str(self.dataframe.columns[columnIndex])
+        return None
+
 class ExpandableText(QWidget):
     def __init__(self, dataframe, csv_name, tab_widget, index, splitter, dict):
         super().__init__()
@@ -63,7 +68,7 @@ class ExpandableText(QWidget):
         self.dataframe = dataframe
         self.csv_name = csv_name
         self.tab_widget = tab_widget
-        self.splitter = splitter
+        self.table_split = splitter
         self.dict = dict
         self.index = index
 
@@ -130,6 +135,8 @@ class ExpandableText(QWidget):
                 model.update_visible_rows()
 
     def setup_data(self):
+        self.epic = {}
+        self.nice = []
         tab_name = self.csv_name
         if tab_name not in self.tab_widget.tab_dict:
             model = DataFrameTableModel(self.dataframe, self.column_checkboxes)
@@ -138,6 +145,7 @@ class ExpandableText(QWidget):
             table = QTableView()
             table.setModel(model)
             table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+            # table.setSelectionBehavior(QAbstractItemView.SelectRows)
             self.dict[table] = model
 
             # Make tab
@@ -148,25 +156,58 @@ class ExpandableText(QWidget):
             if isinstance(self.index, int):
                 if not self.first_split:
                     self.first_split = True
-                    self.splitter.insertWidget(1, self.tab_widget)
+                    self.table_split.insertWidget(1, self.tab_widget)
                 else:
                     # Subsequent double-taps: add the new tab widget to the initially split tab widget
-                    self.splitter.widget(1).addTab(table, self.csv_name)
+                    self.table_split.widget(1).addTab(table, self.csv_name)
             
             for i, j in self.dict.items():
                 i.verticalScrollBar().valueChanged.connect(self.load_more_data)
                 self.check_status(j)
 
+        # Enable multi-selection for tables
+        for tab_name, table_widget in self.tab_widget.tab_dict.items():
+                selection_model = table_widget.selectionModel()
+                selection_model.selectionChanged.connect(self.handle_selection_changed)
+    
     def check_status(self, model):
         for checkbox in self.column_checkboxes.values():
             checkbox.stateChanged.connect(model.update_visible_columns)
 
-    def highlightSelectedRows(self):
-        selected_indexes = self.selectionModel().selectedRows()
-        print(f"{selected_indexes = }")
-        for index in selected_indexes:
-            self.setRowHidden(index.row(), False)
+    def handle_selection_changed(self):
 
+        # Get the correct table
+        current_index = self.tab_widget.currentIndex()
+        current_tab_name = self.tab_widget.tabText(current_index)
+        table = self.tab_widget.tab_dict[current_tab_name]
+        model = self.dict[table]
+
+
+        selected_indexes = table.selectionModel().selectedIndexes()
+        for index in selected_indexes:
+            row = index.row()
+            col = index.column()
+            columnName = model.getColumnName(col)
+            index = model.index(row, col)
+
+        # Setup Data
+        value = model.data(index)
+
+        if columnName in self.epic:
+            self.epic[columnName].append(value)
+        else:
+            self.epic[columnName] = [value]
+
+        # dataframe = pd.DataFrame(self.epic)
+        print(f"{self.epic = }")
+        # self.nice.append(current_tab_name)
+
+        # # selected_data = model.selected_data
+        # selected_dataframe = pd.DataFrame(self.epic)
+        # print(selected_dataframe)
+
+        
+        
 class DataFrameViewer(QWidget):
     def __init__(self, data):
         super().__init__()
@@ -174,11 +215,15 @@ class DataFrameViewer(QWidget):
         self.init_ui(data)
 
     def init_ui(self, data):
-        
+
         # Setup Layouts
-        self.main_layout = QVBoxLayout()
+        self.main_layout = QHBoxLayout()
+        self.left_layout = QVBoxLayout()
+        self.right_layout = QVBoxLayout()
+
         labels_layout = QVBoxLayout()
-        self.splitter = QSplitter(Qt.Horizontal)
+        self.main_splitter = QSplitter()
+        self.table_split = QSplitter(Qt.Horizontal)
 
         # Setup Widgets
         self.tab_widget = QTabWidget()
@@ -189,19 +234,38 @@ class DataFrameViewer(QWidget):
         self.model_dict = {}
         self.tab_widget.tab_dict = {}
 
+        # CSV Save Button
+        self.csv_button = QPushButton("Save Data")
+        self.csv_button.clicked.connect(self.save_csv)
+
         # Run the data through the expanded text list
         for csv_name, df in data.items():
-            text_widget = ExpandableText(df, csv_name, self.tab_widget, None, self.splitter, self.model_dict)
+            text_widget = ExpandableText(df, csv_name, self.tab_widget, None,
+                                         self.table_split, self.model_dict)
             labels_layout.addWidget(text_widget)
 
         # Configure layouts
         scroll_widget.setLayout(labels_layout)
+        scroll_area.setFixedWidth(500)
         scroll_area.setWidget(scroll_widget)
         scroll_area.setWidgetResizable(True)
-        self.main_layout.addWidget(scroll_area)
-        self.splitter.addWidget(self.tab_widget)
-        self.main_layout.addWidget(self.splitter)
+
+        # Create Splitter 
+        self.table_split.addWidget(self.tab_widget)
+
+        # Main Layout
+        labels_layout.addWidget(self.csv_button)
+        self.main_layout.addWidget(self.main_splitter)
         self.setLayout(self.main_layout)
+
+        # Layout configure
+        self.main_splitter.addWidget(scroll_area)
+        self.main_splitter.addWidget(self.table_split)
+        self.main_splitter.setStretchFactor(0, 1)
+
+        # Set layouts for the placeholder widgets
+        self.main_splitter.widget(0).setLayout(self.right_layout)
+        self.main_splitter.widget(1).setLayout(self.right_layout)
 
         # Tab widget, double click to compare and able to be removed
         self.tab_widget.setMovable(True)
@@ -218,6 +282,9 @@ class DataFrameViewer(QWidget):
                     return model.get_dataframe()
         return pd.DataFrame()  # Return an empty DataFrame if no data is available
 
+    """
+    This allows for the user to double click on the tab and be able to compare a tab on the side
+    """
     def load_table_double_click(self, index):
 
         # Remove the tab that you want to switch over
@@ -234,16 +301,42 @@ class DataFrameViewer(QWidget):
             new_tab_widget.tab_dict = {}
             dataframe = self.get_current_tab_dataframe()
 
+            # Make it that the user can't remove the last tab
             if new_tab_widget.count() == 0:
                 new_tab_widget.tabCloseRequested.connect(self.tabCloseRequested)
-                # dummy_widget = QWidget()
-                # self.splitter.replaceWidget(new_tab_widget, dummy_widget)
 
+            # Ensure dataframe is not empty before creating splitter item
             if not dataframe.empty:
-                ExpandableText(dataframe, new_tab, new_tab_widget, index, self.splitter, self.model_dict)
+                ExpandableText(dataframe, new_tab, new_tab_widget, index, self.table_split, self.model_dict)
             else:
                 print("Cannot Compare, dataframe is empty!")
-
+    
+    # Remove the splitter when removed speicifc tab
     def tabCloseRequested(self, index):
         if self.tab_widget.count() > 1:
-            self.splitter.widget(1).setParent(None)
+            self.table_split.widget(1).setParent(None)
+
+    """
+    User can save a csv based on what they have selected in a table
+    """
+    def save_csv(self):
+        pass
+        # # Get the correct table
+        # current_index = self.tab_widget.currentIndex()
+        # current_tab_name = self.tab_widget.tabText(current_index)
+        # table = self.tab_widget.tab_dict[current_tab_name]
+        # model = self.model_dict[table]
+
+        # selected_indexes = table.selectionModel().selectedIndexes()
+        # for index in selected_indexes:
+        #     row = index.row()
+        #     col = index.column()
+        #     columnName = model.getColumnName(col)
+        #     index = model.index(row, col)
+        #     value = model.data(index)
+
+        #     print(f"{columnName = }")
+        #     print(f"{value = }")
+        # nice = ExpandableText.handle_selection_changed(ExpandableText)
+        # print(nice)
+        # df.to_csv(file_name, encoding='utf-8', index=False)

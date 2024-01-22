@@ -4,6 +4,10 @@ from PyQt5.QtCore import Qt, QAbstractTableModel
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,\
                             QTableView, QCheckBox, QScrollArea, QTabWidget, QSplitter, QFileDialog, QAbstractItemView
 
+
+"""
+Created QAbstractionTableModel that each dataframe loaded in utilizes
+"""
 class DataFrameTableModel(QAbstractTableModel):
     def __init__(self, dataframe, column_checkboxes, parent=None):
         super(DataFrameTableModel, self).__init__(parent)
@@ -59,6 +63,10 @@ class DataFrameTableModel(QAbstractTableModel):
             return str(self.dataframe.columns[columnIndex])
         return None
 
+
+"""
+Setup the expandable text checkboxes and setup their individual tables that are loaded in
+"""
 class ExpandableText(QWidget):
     def __init__(self, dataframe, csv_name, tab_widget, index, splitter, dict):
         super().__init__()
@@ -72,38 +80,31 @@ class ExpandableText(QWidget):
         self.dict = dict
         self.index = index
 
+        # Load the checkbox items
         self.column_checkboxes = self.create_column_checkboxes()
 
+        # If the table is for inital setup or comparison load in
         if isinstance(self.index, int):
             self.setup_data()
         else:
             self.init_ui()
 
-    def create_column_checkboxes(self):
-        column_checkboxes = {}
-        for column in self.dataframe.columns:
-            checkbox = QCheckBox(column)
-            checkbox.setChecked(True)
-            checkbox.setVisible(self.is_expanded)
-            checkbox.stateChanged.connect(self.setup_data)
-            column_checkboxes[column] = checkbox
-        return column_checkboxes
 
+    """
+    Setup each table and tab for the loaded dataframes
+    """
     def init_ui(self):
 
-        # Layouts
         layout = QHBoxLayout()
         button_layout = QVBoxLayout()
 
-        # Button setups
+        # Button setups and styles
         self.check_button = QPushButton(self.csv_name + " +")
+        self.check_button.clicked.connect(self.toggle_expansion)
         if not self.dataframe.empty:
             self.check_button.setStyleSheet('border: none; color: black; font-size: 24px;')
         else:
             self.check_button.setStyleSheet('border: none; color: red; font-size: 24px;')
-
-        # Run the toggle column function
-        self.check_button.clicked.connect(self.toggle_expansion)
 
         # Setup the column selection buttons
         self.options_widget = QWidget()
@@ -117,6 +118,22 @@ class ExpandableText(QWidget):
         layout.addStretch()
         self.setLayout(layout)
 
+
+    """
+    Create the checkboxes that allows for user to toggle columns in dataframe table
+    """
+    def create_column_checkboxes(self):
+        column_checkboxes = {}
+    
+        for column in self.dataframe.columns:
+            checkbox = QCheckBox(column)
+            checkbox.setChecked(True)
+            checkbox.setVisible(self.is_expanded)
+            checkbox.stateChanged.connect(self.setup_data)
+            column_checkboxes[column] = checkbox
+
+        return column_checkboxes
+    
 
     """
     Setups of the column selection items
@@ -158,10 +175,9 @@ class ExpandableText(QWidget):
             table = QTableView()
             table.setModel(model)
             table.setSelectionMode(QAbstractItemView.ExtendedSelection)
-            # table.setSelectionBehavior(QAbstractItemView.SelectRows)
-            self.dict[table] = model
 
-            # Make tab
+            # Make tab for loaded data - save model
+            self.dict[table] = model
             self.tab_widget.addTab(table, self.csv_name)
             self.tab_widget.tab_dict[self.csv_name] = table
 
@@ -174,6 +190,7 @@ class ExpandableText(QWidget):
                     # Subsequent double-taps: add the new tab widget to the initially split tab widget
                     self.table_split.widget(1).addTab(table, self.csv_name)
             
+            # Allow for batch scrolling to work for any of the tables
             for i, j in self.dict.items():
                 i.verticalScrollBar().valueChanged.connect(self.load_more_data)
                 self.check_status(j)

@@ -5,14 +5,14 @@ import numpy as np
 from matplotlib.widgets import CheckButtons
 from matplotlib import gridspec
 
-import main_window
+import landing_page
 
 class StaticPlots(QWidget):
     def __init__(self):
         super().__init__()
 
         # User file data
-        data = main_window.update_file()
+        data = landing_page.update_file()
 
         # Window Setup
         self.row = 0

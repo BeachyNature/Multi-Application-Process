@@ -1,14 +1,18 @@
 import os
 import sys
 import json
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QLineEdit, QPushButton
-from base64 import urlsafe_b64encode, urlsafe_b64decode
 import bcrypt
+from base64 import urlsafe_b64encode, urlsafe_b64decode
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QLineEdit, QPushButton
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.fernet import Fernet
 
-import main_window
+import landing_page
 
+
+"""
+Main login window for the user to interact with the tool.
+"""
 class LoginWindow(QWidget):
     def __init__(self):
         super().__init__()
@@ -16,7 +20,8 @@ class LoginWindow(QWidget):
 
         # Setup user path
         user_path = os.path.expanduser("~")
-        self.file_path = os.path.join(user_path,'user.json')
+        self.folder_path = os.path.join(user_path, "MAPS-Python")
+        self.file_path = os.path.join(self.folder_path,'user.json')
 
         self.init_ui()
 
@@ -32,6 +37,7 @@ class LoginWindow(QWidget):
 
         self.login_button = QPushButton('Login', self)
         self.register_button = QPushButton('Register', self)
+        self.register_button.setVisible(False)
 
         self.login_button.clicked.connect(self.login)
         self.register_button.clicked.connect(self.register)
@@ -45,6 +51,19 @@ class LoginWindow(QWidget):
 
         self.setLayout(layout)
         self.setWindowTitle('Login Window')
+        self.check_user_file()
+
+
+    """
+    Check if user file exist or not
+    """
+    def check_user_file(self):
+        if os.path.exists(self.file_path):
+            self.username_edit.setText(next(iter(self.load_users())))
+        else:
+            print("Welcome to MAPS-Python! In order to start, you need to register.")
+            self.register_button.setVisible(True)
+
 
     """
     Read the created user file
@@ -71,12 +90,21 @@ class LoginWindow(QWidget):
     """
     Save the user information when created
     """
-    def save_users(self, users):
+    def save_users(self, users, _bool):
         # Serialize the key and encrypted data and save it to the file
         user_info = {
             'key': urlsafe_b64encode(self.key).decode(),
             'data': urlsafe_b64encode(self.encrypt_data(json.dumps(users))).decode()
         }
+
+        if _bool: # Check if the user is registering or not
+            if not os.path.exists(self.folder_path):
+                # If the folder doesn't exist, create it
+                os.makedirs(self.folder_path)
+                print(f"Folder MAPS-Python created successfully at: {self.folder_path}")
+            else:
+                print(f"Folder MAPS-Python already exists at: {self.folder_path}")
+
         with open(self.file_path, 'w') as file:
             json.dump(user_info, file, indent=2)
 
@@ -91,7 +119,7 @@ class LoginWindow(QWidget):
             # Hash the password before storing it
             hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
             users[username] = {'password': hashed_password.decode('utf-8')}
-            self.save_users(users)
+            self.save_users(users, True)
             print("User registered successfully.")
 
 
@@ -109,6 +137,10 @@ class LoginWindow(QWidget):
         print("Invalid username or password.")
         return False
 
+
+    """
+    Encrypt the data that goes into the file
+    """
     def encrypt_data(self, data):
         # Use AES-GCM for encryption
         algorithm = algorithms.AES(self.key[:32])  # Use the first 32 bytes of the key
@@ -123,6 +155,10 @@ class LoginWindow(QWidget):
         encrypted_data = tag + ciphertext
         return encrypted_data
 
+
+    """
+    Decrypt the data to process the data for login or preferences
+    """
     def decrypt_data(self, data):
         # Use AES-GCM for decryption
         algorithm = algorithms.AES(self.key[:32])  # Use the first 32 bytes of the key
@@ -133,14 +169,23 @@ class LoginWindow(QWidget):
         decrypted_data = decryptor.update(data[16:]) + decryptor.finalize()
         return decrypted_data.decode()
 
+
+    """
+    User preference checkboxes
+    """
     def save_checkbox_state(self, sender, state):
+
         # Load users and update checkbox state in users.json
         users = self.load_users()
         users[sender] = state
         
         print(f"{sender} Preference changed!")
-        self.save_users(users)
+        self.save_users(users, False)
 
+
+    """
+    User login process data from text fields
+    """
     def login(self):
         username = self.username_edit.text()
         password = self.password_edit.text()
@@ -151,6 +196,10 @@ class LoginWindow(QWidget):
         # Update checkbox state during login
         self.login_user(username, password, users)
 
+
+    """
+    Register the user with the text fields
+    """
     def register(self):
         username = self.username_edit.text()
         password = self.password_edit.text()
@@ -160,9 +209,13 @@ class LoginWindow(QWidget):
 
         self.register_user(username, password, users)
 
+
+    """
+    Run the program once the user logs in successfully
+    """
     def run_program(self):
         self.close()
-        self.main = main_window.MainWindow()
+        self.main = landing_page.MainWindow()
         self.main.show()
 
 

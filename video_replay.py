@@ -1,8 +1,8 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QLabel, QWidget, QSlider, QPushButton, QTextEdit, QAction
+from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QLabel, QWidget, QSlider, QPushButton, QTextEdit, QAction, QListWidget, QFileDialog
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QMutex, QMutexLocker
 import cv2
-from PyQt5.QtGui import QPixmap, QImage
+from PyQt5.QtGui import QPixmap, QImage, QWindow
 from PIL import Image
 import pytesseract
 
@@ -232,14 +232,62 @@ class VideoPlayerApp(QMainWindow):
         self.video_player.reset_playback_speed()
 
 
-if __name__ == '__main__':
-    app = QApplication(sys.argv)
 
-    video_paths = ["C:/Users/tycon/Downloads/190144 (720p).mp4",
-                "C:/Users/tycon/Downloads/163333 (720p).mp4",
-                "C:/Users/tycon/Downloads/code_-_32767 (720p).mp4"]
+"""
+Inital window that asks user what files they want to look at.
+"""
+class VideoSelector(QWidget):
+    def __init__(self):
+        super(VideoSelector, self).__init__()
 
-    player_app = VideoPlayerApp(video_paths)
-    player_app.show()
+        self.init_ui()
 
-    sys.exit(app.exec_())
+    def init_ui(self):
+        # Create a layout
+        layout = QVBoxLayout()
+
+        # Create a list widget to display selected file paths
+        self.list_widget = QListWidget()
+
+        # Create a button to open the file dialog
+        self.process_button = QPushButton('Play Videos')
+        self.process_button.clicked.connect(self.process_files)
+        self.process_button.setVisible(False)
+
+        select_button = QPushButton('Select Video Files')
+        select_button.clicked.connect(self.show_file_dialog)
+
+        # Add widgets to the layout
+        layout.addWidget(select_button)
+        layout.addWidget(self.list_widget)
+        layout.addWidget(self.process_button)
+        self.setLayout(layout)
+
+
+    """
+    Display the window that will allow the user to load the video paths
+    """
+    def show_file_dialog(self):
+        # Open the file dialog to select multiple files
+        file_dialog = QFileDialog()
+        file_dialog.setFileMode(QFileDialog.ExistingFiles)
+
+        if file_dialog.exec_():
+            # Get the selected file paths
+            selected_files = file_dialog.selectedFiles()
+
+            # Display the selected file paths in the list widget
+            self.list_widget.clear()
+            for file_path in selected_files:
+                self.list_widget.addItem(file_path)
+        self.process_button.setVisible(True)
+
+
+    """
+    Process the file paths in the QListWidget
+    """
+    def process_files(self):
+        video_paths = [self.list_widget.item(x).text() for x in range(self.list_widget.count())]
+        self.main = VideoPlayerApp(video_paths)
+        self.main.show()
+        self.close()

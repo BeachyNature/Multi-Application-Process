@@ -244,19 +244,20 @@ class ExpandableText(QWidget):
             index = model.index(row, col)
 
         # Setup Data
-        value = model.data(index)
+        if index:
+            value = model.data(index)
 
-        if columnName in self.epic:
-            self.epic[columnName].append(value)
-        else:
-            self.epic[columnName] = [value]
+            if columnName in self.epic:
+                self.epic[columnName].append(value)
+            else:
+                self.epic[columnName] = [value]
 
-        # dataframe = pd.DataFrame(self.epic)
-        print(f"{self.epic = }")
+            # dataframe = pd.DataFrame(self.epic)
+            print(f"{self.epic = }")
 
-        # # selected_data = model.selected_data
-        # selected_dataframe = pd.DataFrame(self.epic)
-        # print(selected_dataframe)
+            # # selected_data = model.selected_data
+            # selected_dataframe = pd.DataFrame(self.epic)
+            # print(selected_dataframe)
 
 
 """
@@ -267,6 +268,7 @@ class DataFrameViewer(QWidget):
         super().__init__()
         self.incr = 0
         self.data = data
+        self._bool = False
         self.init_ui()
 
     def init_ui(self):
@@ -291,10 +293,11 @@ class DataFrameViewer(QWidget):
         self.model_dict = {}
         self.tab_widget.tab_dict = {}
 
-        # Search bar 
-        saerch_bar = QLineEdit()
-        saerch_bar.returnPressed.connect(self.search_tables)
-
+        # Search bar and Checkbox
+        search_bar = QLineEdit()
+        search_bar.returnPressed.connect(self.search_tables)
+        search_bar.setPlaceholderText("Search...")
+        self.all_table = QCheckBox("Search All Tables")
 
         # CSV Save Button
         self.csv_button = QPushButton("Save Data")
@@ -317,7 +320,8 @@ class DataFrameViewer(QWidget):
 
         # Main Layout
         labels_layout.addWidget(self.csv_button)
-        self.main_layout.addWidget(saerch_bar)
+        self.main_layout.addWidget(search_bar)
+        self.main_layout.addWidget(self.all_table)
         self.center_layout.addWidget(self.main_splitter)
         self.main_layout.addLayout(self.center_layout)
         self.setLayout(self.main_layout)
@@ -358,23 +362,24 @@ class DataFrameViewer(QWidget):
 
         # Remove the tab that you want to switch over
         if self.tab_widget.count() > 1:
+            self._bool = True
             self.incr += 1
             tab_name = self.tab_widget.tabText(index)
 
             # Create new tab
-            new_tab_widget = QTabWidget()
-            new_tab_widget.setTabsClosable(True)
             new_tab = tab_name + "-" + str(self.incr)
-            new_tab_widget.tab_dict = {}
+            self.new_tab_widget = QTabWidget()
+            self.new_tab_widget.tab_dict = {}
+            self.new_tab_widget.setTabsClosable(True)
             dataframe = self.get_current_tab_dataframe()
 
             # Make it that the user can't remove the last tab
-            if new_tab_widget.count() == 0:
-                new_tab_widget.tabCloseRequested.connect(self.tabCloseRequested)
+            if self.new_tab_widget.count() == 0:
+                self.new_tab_widget.tabCloseRequested.connect(self.tabCloseRequested)
 
             # Ensure dataframe is not empty before creating splitter item
             if not dataframe.empty:
-                ExpandableText(dataframe, new_tab, new_tab_widget, index, self.table_split, self.model_dict)
+                ExpandableText(dataframe, new_tab, self.new_tab_widget, index, self.table_split, self.model_dict)
             else:
                 print("Cannot Compare, dataframe is empty!")
     
@@ -406,10 +411,19 @@ class DataFrameViewer(QWidget):
     """
     def search_tables(self):
         text = self.sender().text()
-        
-        for i in range(len(self.tab_widget)):
-            current_tab = self.tab_widget.widget(i)
-            if isinstance(current_tab, QTableView):
-                model = current_tab.model()
-                model.update_search_text(text)
 
+        def run_search(tab):
+            for i in range(len(tab)):
+                index_table = tab.widget(i)
+                if isinstance(index_table, QTableView):
+                    model = index_table.model()
+                    model.update_search_text(text)
+
+        # Run through all the tabs if they exist
+        if self.tab_widget:
+            value = self.tab_widget
+            run_search(value)
+   
+        if self._bool and self.all_table.isChecked():
+            value = self.new_tab_widget
+            run_search(value)

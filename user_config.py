@@ -1,3 +1,4 @@
+import os
 import sys
 import json
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QLineEdit, QPushButton
@@ -11,8 +12,11 @@ import main_window
 class LoginWindow(QWidget):
     def __init__(self):
         super().__init__()
-
         self.key = None  # Placeholder for the key
+
+        # Setup user path
+        user_path = os.path.expanduser("~")
+        self.file_path = os.path.join(user_path,'user.json')
 
         self.init_ui()
 
@@ -42,9 +46,12 @@ class LoginWindow(QWidget):
         self.setLayout(layout)
         self.setWindowTitle('Login Window')
 
+    """
+    Read the created user file
+    """
     def load_users(self):
         try:
-            with open('user.json', 'rb') as file:
+            with open(self.file_path, 'rb') as file:
                 user_data = file.read()
 
             # Deserialize the user data and extract the key and encrypted data
@@ -60,15 +67,23 @@ class LoginWindow(QWidget):
             self.key = Fernet.generate_key()  # Generate a new key if not found
         return users
 
+
+    """
+    Save the user information when created
+    """
     def save_users(self, users):
         # Serialize the key and encrypted data and save it to the file
         user_info = {
             'key': urlsafe_b64encode(self.key).decode(),
             'data': urlsafe_b64encode(self.encrypt_data(json.dumps(users))).decode()
         }
-        with open('user.json', 'w') as file:
+        with open(self.file_path, 'w') as file:
             json.dump(user_info, file, indent=2)
 
+
+    """
+    Create the user login information and encrypt it
+    """
     def register_user(self, username, password, users):
         if username in users:
             print("Username already exists. Please choose a different username.")
@@ -79,6 +94,10 @@ class LoginWindow(QWidget):
             self.save_users(users)
             print("User registered successfully.")
 
+
+    """
+    Login the user based on the information in the users json
+    """
     def login_user(self, username, password, users):
         if username in users:
             # Verify the hashed password

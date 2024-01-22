@@ -1,8 +1,10 @@
 import sys
 import pandas as pd
+from PyQt5.QtGui import QColor
 from PyQt5.QtCore import Qt, QAbstractTableModel
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,\
-                            QTableView, QCheckBox, QScrollArea, QTabWidget, QSplitter, QFileDialog, QAbstractItemView
+                            QTableView, QCheckBox, QScrollArea, QTabWidget, QSplitter, QFileDialog,\
+                            QAbstractItemView, QLineEdit
 
 
 """
@@ -11,6 +13,7 @@ Created QAbstractionTableModel that each dataframe loaded in utilizes
 class DataFrameTableModel(QAbstractTableModel):
     def __init__(self, dataframe, column_checkboxes, parent=None):
         super(DataFrameTableModel, self).__init__(parent)
+        self.highlighted_cells = []
         self.dataframe = dataframe
         self.column_checkboxes = column_checkboxes
         self.visible_rows = 100
@@ -27,6 +30,9 @@ class DataFrameTableModel(QAbstractTableModel):
         if role == Qt.DisplayRole:
             column_name = self.visible_columns[index.column()]
             return str(self.dataframe.iloc[index.row()][column_name])
+        if role == Qt.BackgroundRole:
+            if index in self.highlighted_cells:
+                return QColor("yellow")
         return None
 
     def columnCount(self, parent=None):
@@ -62,6 +68,15 @@ class DataFrameTableModel(QAbstractTableModel):
         if 0 <= columnIndex < len(self.dataframe.columns):
             return str(self.dataframe.columns[columnIndex])
         return None
+    
+    def update_search_text(self, text):
+        self.highlighted_cells = []
+        for row in range(self.rowCount()):
+            for col in range(self.columnCount()):
+                item = str(self.dataframe.iat[row, col])
+                if text and text in item:
+                    self.highlighted_cells.append(self.index(row, col))
+        self.layoutChanged.emit()
 
 
 """
@@ -251,12 +266,15 @@ class DataFrameViewer(QWidget):
     def __init__(self, data):
         super().__init__()
         self.incr = 0
-        self.init_ui(data)
+        self.data = data
+        self.init_ui()
 
-    def init_ui(self, data):
+    def init_ui(self):
 
         # Setup Layouts
-        self.main_layout = QHBoxLayout()
+        self.center_layout = QHBoxLayout()
+        self.main_layout = QVBoxLayout()
+
         self.left_layout = QVBoxLayout()
         self.right_layout = QVBoxLayout()
 
@@ -266,19 +284,24 @@ class DataFrameViewer(QWidget):
 
         # Setup Widgets
         self.tab_widget = QTabWidget()
-        scroll_widget = QWidget()
         scroll_area = QScrollArea()
+        scroll_widget = QWidget()
 
         # Setup tab dictionary
         self.model_dict = {}
         self.tab_widget.tab_dict = {}
+
+        # Search bar 
+        saerch_bar = QLineEdit()
+        saerch_bar.returnPressed.connect(self.search_tables)
+
 
         # CSV Save Button
         self.csv_button = QPushButton("Save Data")
         self.csv_button.clicked.connect(self.save_csv)
 
         # Run the data through the expanded text list
-        for csv_name, df in data.items():
+        for csv_name, df in self.data.items():
             text_widget = ExpandableText(df, csv_name, self.tab_widget, None,
                                          self.table_split, self.model_dict)
             labels_layout.addWidget(text_widget)
@@ -294,7 +317,9 @@ class DataFrameViewer(QWidget):
 
         # Main Layout
         labels_layout.addWidget(self.csv_button)
-        self.main_layout.addWidget(self.main_splitter)
+        self.main_layout.addWidget(saerch_bar)
+        self.center_layout.addWidget(self.main_splitter)
+        self.main_layout.addLayout(self.center_layout)
         self.setLayout(self.main_layout)
 
         # Layout configure
@@ -303,7 +328,7 @@ class DataFrameViewer(QWidget):
         self.main_splitter.setStretchFactor(0, 1)
 
         # Set layouts for the placeholder widgets
-        self.main_splitter.widget(0).setLayout(self.right_layout)
+        self.main_splitter.widget(0).setLayout(self.left_layout)
         self.main_splitter.widget(1).setLayout(self.right_layout)
 
         # Tab widget, double click to compare and able to be removed
@@ -375,3 +400,16 @@ class DataFrameViewer(QWidget):
         # nice = ExpandableText.handle_selection_changed(ExpandableText)
         # print(nice)
         # df.to_csv(file_name, encoding='utf-8', index=False)
+
+    """
+    User can type a string here and search all the loaded tables to highlight them
+    """
+    def search_tables(self):
+        text = self.sender().text()
+        
+        for i in range(len(self.tab_widget)):
+            current_tab = self.tab_widget.widget(i)
+            if isinstance(current_tab, QTableView):
+                model = current_tab.model()
+                model.update_search_text(text)
+

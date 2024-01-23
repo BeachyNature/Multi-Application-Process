@@ -82,6 +82,7 @@ class MainWindow(QMainWindow):
         for instance in self.instances_to_show:
             instance.show()
 
+
 """
 Gets the user configuration settings, accessible from other classes
 """

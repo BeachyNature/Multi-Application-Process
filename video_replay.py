@@ -72,7 +72,6 @@ class VideoPlayer(QWidget):
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_frame)
-        self.update_slider_duration()
 
         layout = QVBoxLayout()
         h_layout = QHBoxLayout()
@@ -118,9 +117,6 @@ class VideoPlayer(QWidget):
     def set_video_position(self, position):
         for video_capture in self.video_captures:
             video_capture.set(cv2.CAP_PROP_POS_FRAMES, position)
-
-    def update_slider_duration(self):
-        pass
 
     def toggle_play_pause(self):
         self.playing = not self.playing
@@ -171,15 +167,19 @@ class VideoPlayerApp(QMainWindow):
         self.setGeometry(100, 100, 1200, 600)
         self.setWindowTitle('Video Player')
 
-
-    #TODO Add a restqrt video button
+    """
+    Create the menu options to the video player
+    """
     def create_menus(self):
         menubar = self.menuBar()
 
         file_menu = menubar.addMenu('File')
-        open_action = QAction('Open', self)
-        open_action.triggered.connect(self.toggle_text_capture_window)
-        file_menu.addAction(open_action)
+        open_file = QAction('Open New Videos', self)
+        open_file.triggered.connect(self.show_file_dialog)
+        open_text = QAction('Open Text Capture', self)
+        open_text.triggered.connect(self.toggle_text_capture_window)
+        file_menu.addAction(open_file)
+        file_menu.addAction(open_text)
 
         playback_menu = menubar.addMenu('Playback')
         play_action = QAction('Play', self)
@@ -202,35 +202,61 @@ class VideoPlayerApp(QMainWindow):
         reset_speed_action.triggered.connect(self.reset_playback_speed)
         playback_menu.addAction(reset_speed_action)
 
+    """
+    Toggle the visibility of the text capture window
+    """
     def toggle_text_capture_window(self):
         current_visibility = self.text_capture_window.isVisible()
         self.text_capture_window.setVisible(not current_visibility)
 
+    """
+    Recieve the text that the text window captures
+    """
     def handle_text_captured(self, text):
         self.text_capture_window.append_text(text)
 
+    """
+    Toggle the playback by this action
+    """
     def start_playback(self):
-        # Add logic to start playback
-        pass
+        self.video_player.toggle_play_pause()
     
-    # Restarts the video when the user selections option
+    """
+    Restarts the video when the user presses this action
+    """
     def restart_video(self):
         self.video_player.playing = not self.video_player.playing
         self.video_player.restart_video_action()
         self.video_player.playback_slider.setValue(0)
         self.video_player.play_pause_button.setText("Start Video")
 
+    """
+    Increase the speed of the playback
+    """
     def increment_playback_speed(self):
         current_speed = self.video_player.playback_speed
         self.video_player.set_playback_speed(current_speed + 1)
 
+    """
+    Slow down the speed of the playback
+    """
     def decrement_playback_speed(self):
         current_speed = self.video_player.playback_speed
         self.video_player.set_playback_speed(max(1, current_speed - 1))
 
+    """
+    Return the video back to its normal speed
+    """
     def reset_playback_speed(self):
         self.video_player.reset_playback_speed()
 
+    """
+    Allow the user to open up different videos
+    """
+    #TODO Get it to replace the current running videos
+    def show_file_dialog(self):
+        self.main = VideoSelector()
+        self.main.show()
 
 
 """
@@ -262,6 +288,7 @@ class VideoSelector(QWidget):
         layout.addWidget(self.list_widget)
         layout.addWidget(self.process_button)
         self.setLayout(layout)
+        self.setWindowTitle('Video Selector')
 
 
     """

@@ -29,11 +29,20 @@ class FileDialog(QWidget):
         check_button = QCheckBox("Run all csvs in directory")
         check_button.toggled.connect(self.run_all_csv)
 
+        self.progress_bar = QProgressBar(self)
+        self.progress_bar.setGeometry(30, 40, 200, 25)
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setValue(0)
+
+        self.label = QLabel()
+
         layout.addWidget(btn_open_dialog)
         layout.addWidget(check_button)
+        layout.addWidget(self.progress_bar)
+        layout.addWidget(self.label)
 
         self.setLayout(layout)
-        self.setGeometry(300, 300, 300, 150)
+        self.setGeometry(500, 800, 800, 150)
         self.setWindowTitle('CSV Loader')
     
 
@@ -54,19 +63,24 @@ class FileDialog(QWidget):
 
             # Check if user selected a csv, then convert to dataframe
             if selected_files:
+                total_files = len(selected_files)
                 for idx, file_path in enumerate (selected_files):
                     file_name = os.path.basename(file_path)
                     csv_name = file_name.rstrip('.csv')
                     self.process_csvs(file_path, csv_name, idx)
+                    self.progress_status(idx, total_files)
         
         elif self._bool: # Select a directory to process all CSV's inside
             directory = QFileDialog.getExistingDirectory(None, "Select a directory", ".", QFileDialog.ShowDirsOnly)
     
             if directory:
-                for idx, csv_name in  enumerate (os.listdir(directory)):
+                csv_files = [file for file in os.listdir(directory) if file.endswith(".csv")]
+                total_files = len(csv_files)
+                for idx, csv_name in  enumerate (csv_files):
                     if csv_name.endswith(".csv"):
                         file_path = os.path.join(directory, csv_name)
                         self.process_csvs(file_path, csv_name, idx)
+                        self.progress_status(idx, total_files)
         
         # Run the QAbstractionTable with the loaded CSVs
         self.table_model = qabstractionmodel.DataFrameViewer(self.dict)
@@ -80,14 +94,17 @@ class FileDialog(QWidget):
     Processes the CSVS into dataframes
     """
     def process_csvs(self, file_path, csv_name, idx):
+        # Make the progress bar visible
+        self.progress_bar.setVisible(True)
+
         try:
             df = pd.read_csv(file_path)
-            print(f"Processing {file_path}:")
+            self.label.setText(f"Processing {file_path}")
         except UnicodeDecodeError:
             df = pd.DataFrame()
-            print(f"Error decoding file {file_path}. File Empty.")
+            self.label.setText(f"Error decoding file {file_path}. File Empty.")
         except Exception as e:
-            print(f"An error occurred while processing {file_path}: {e}")
+            self.label.setText(f"An error occurred while processing {file_path}: {e}")
         self.create_table(df, csv_name, idx)
 
 
@@ -111,6 +128,14 @@ class FileDialog(QWidget):
     """
     def run_all_csv(self, checked):
         self._bool = checked
+
+
+    """
+    Set the status of the progress bar
+    """
+    def progress_status(self, idx, total_files):
+        progress_value = int((idx + 1) / total_files * 100)
+        self.progress_bar.setValue(progress_value)
 
 
 # THIS IS FOR TESTING

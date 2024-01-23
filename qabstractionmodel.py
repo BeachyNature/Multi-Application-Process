@@ -1,10 +1,9 @@
-import sys
 import pandas as pd
 from PyQt5.QtGui import QColor
 from PyQt5.QtCore import Qt, QAbstractTableModel
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,\
-                            QTableView, QCheckBox, QScrollArea, QTabWidget, QSplitter, QFileDialog,\
-                            QAbstractItemView, QLineEdit
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,\
+                            QTableView, QCheckBox, QScrollArea, QTabWidget, QSplitter,\
+                            QAbstractItemView
 
 
 """
@@ -17,6 +16,7 @@ class DataFrameTableModel(QAbstractTableModel):
         self.dataframe = dataframe
         self.column_checkboxes = column_checkboxes
         self.visible_rows = 100
+        self.text = None
         self.update_visible_columns()
 
     def rowCount(self, parent=None):
@@ -46,29 +46,60 @@ class DataFrameTableModel(QAbstractTableModel):
                 return str(section + 1)
         return None
 
+
+    """
+    Update the visible rows counter to load the next amount of rows
+    """
     def update_visible_rows(self):
         self.visible_rows += 100
         self.visible_rows = min(self.visible_rows, len(self.dataframe))
 
+
+    """
+    Update the next 100 visible rows
+    """
     def canFetchMore(self, index):
+        # # Update the highlight text when scrolling to the next couple rows
+        if self.text:
+            self.update_search_text(self.text)
         return self.visible_rows < len(self.dataframe)
 
+
+    """
+    This fetches the next 100 rows that need to be loaded in
+    """
     def fetchMore(self, index):
+        # Remove the last 100 cells out of the list to improve performance
+        if self.highlighted_cells:
+            self.highlighted_cells = self.highlighted_cells[100:]
+
         remaining_rows = len(self.dataframe) - self.visible_rows
         rows_to_fetch = min(100, remaining_rows)
         self.beginInsertRows(index, self.visible_rows, self.visible_rows + rows_to_fetch - 1)
         self.visible_rows += rows_to_fetch
         self.endInsertRows()
     
+
+    """
+    Get the current dataframe from the table, this also factors in hidden rows
+    """
     def get_dataframe(self):
         visible_columns = [col for col, checkbox in self.column_checkboxes.items() if checkbox.isChecked()]
         return pd.DataFrame(self.dataframe[visible_columns])
 
+
+    """
+    Get the column name of specific selected column
+    """
     def getColumnName(self, columnIndex):
         if 0 <= columnIndex < len(self.dataframe.columns):
             return str(self.dataframe.columns[columnIndex])
         return None
-    
+
+
+    """
+    Gets highlights the found text in the desired tables
+    """
     def update_search_text(self, text):
         self.highlighted_cells = []
         for row in range(self.rowCount()):
@@ -173,7 +204,6 @@ class ExpandableText(QWidget):
 
         if tab.verticalScrollBar().value() == tab.verticalScrollBar().maximum():
             if len(self.dataframe) > 100:
-                model.fetchMore()
                 model.update_visible_rows()
 
 
@@ -423,6 +453,7 @@ class DataFrameViewer(QWidget):
                 index_table = tab.widget(i)
                 if isinstance(index_table, QTableView):
                     model = index_table.model()
+                    model.text = text
                     model.update_search_text(text)
 
         # Run through all the tabs if they exist

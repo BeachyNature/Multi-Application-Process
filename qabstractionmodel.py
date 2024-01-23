@@ -1,4 +1,6 @@
 import pandas as pd
+import time
+from itertools import product
 from PyQt5.QtGui import QColor
 from PyQt5.QtCore import Qt, QAbstractTableModel
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,\
@@ -53,15 +55,13 @@ class DataFrameTableModel(QAbstractTableModel):
     def update_visible_rows(self):
         self.visible_rows += 100
         self.visible_rows = min(self.visible_rows, len(self.dataframe))
+        return self.visible_rows
 
 
     """
     Update the next 100 visible rows
     """
     def canFetchMore(self, index):
-        # # Update the highlight text when scrolling to the next couple rows
-        if self.text:
-            self.update_search_text(self.text)
         return self.visible_rows < len(self.dataframe)
 
 
@@ -69,10 +69,6 @@ class DataFrameTableModel(QAbstractTableModel):
     This fetches the next 100 rows that need to be loaded in
     """
     def fetchMore(self, index):
-        # Remove the last 100 cells out of the list to improve performance
-        if self.highlighted_cells:
-            self.highlighted_cells = self.highlighted_cells[100:]
-
         remaining_rows = len(self.dataframe) - self.visible_rows
         rows_to_fetch = min(100, remaining_rows)
         self.beginInsertRows(index, self.visible_rows, self.visible_rows + rows_to_fetch - 1)
@@ -100,14 +96,15 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     Gets highlights the found text in the desired tables
     """
-    def update_search_text(self, text):
+    def update_search_text(self):
         self.highlighted_cells = []
-        for row in range(self.rowCount()):
-            for col in range(self.columnCount()):
+        if self.text:
+            for row , col in product(range(self.visible_rows), range(self.columnCount())):
                 item = str(self.dataframe.iat[row, col])
-                if text and text in item:
+                if self.text and self.text in item:
                     self.highlighted_cells.append(self.index(row, col))
         self.layoutChanged.emit()
+
 
 
 """
@@ -196,15 +193,25 @@ class ExpandableText(QWidget):
 
 
     """
-    Batch loading based on user scrolling
+    Tells the model to load the next 100 rows
     """
     def load_more_data(self):
         tab = self.tab_widget.tab_dict[self.csv_name]
-        model = tab.model()
 
-        if tab.verticalScrollBar().value() == tab.verticalScrollBar().maximum():
+        model = tab.model()
+        
+        current_value = tab.verticalScrollBar().value()
+        max_value = tab.verticalScrollBar().maximum()
+
+        def is_within_range(value1, value2, range_limit=20):
+            return abs(value1 - value2) <= range_limit
+
+        # Checks if the scroll value is within the maximum value
+        if is_within_range(current_value, max_value):
             if len(self.dataframe) > 100:
                 model.update_visible_rows()
+                model.update_search_text()
+
 
 
     """
@@ -247,7 +254,8 @@ class ExpandableText(QWidget):
                     selection_model.selectionChanged.connect(self.handle_selection_changed)
         else:
             print(f"{tab_name} is empty! Table unable to load!")
-    
+
+
     """
     Toggle the columns that the user selects in the options menu
     """
@@ -267,29 +275,29 @@ class ExpandableText(QWidget):
         table = self.tab_widget.tab_dict[current_tab_name]
         model = self.dict[table]
 
-        # Get the index selection values
-        selected_indexes = table.selectionModel().selectedIndexes()
-        for index in selected_indexes:
-            row = index.row()
-            col = index.column()
-            columnName = model.getColumnName(col)
-            index = model.index(row, col)
+        # # Get the index selection values
+        # selected_indexes = table.selectionModel().selectedIndexes()
+        # for index in selected_indexes:
+        #     row = index.row()
+        #     col = index.column()
+        #     columnName = model.getColumnName(col)
+        #     index = model.index(row, col)
 
-        # Setup Data
-        if index:
-            value = model.data(index)
+        # # Setup Data
+        # if index:
+        #     value = model.data(index)
 
-            if columnName in self.epic:
-                self.epic[columnName].append(value)
-            else:
-                self.epic[columnName] = [value]
+        #     if columnName in self.epic:
+        #         self.epic[columnName].append(value)
+        #     else:
+        #         self.epic[columnName] = [value]
 
-            # dataframe = pd.DataFrame(self.epic)
-            print(f"{self.epic = }")
+        #     # dataframe = pd.DataFrame(self.epic)
+        #     print(f"{self.epic = }")
 
-            # # selected_data = model.selected_data
-            # selected_dataframe = pd.DataFrame(self.epic)
-            # print(selected_dataframe)
+        #     # # selected_data = model.selected_data
+        #     # selected_dataframe = pd.DataFrame(self.epic)
+        #     # print(selected_dataframe)
 
 
 """
@@ -367,10 +375,6 @@ class DataFrameViewer(QWidget):
         self.main_splitter.addWidget(self.table_split)
         self.main_splitter.setStretchFactor(0, 1)
 
-        # Set layouts for the placeholder widgets
-        self.main_splitter.widget(0).setLayout(self.left_layout)
-        self.main_splitter.widget(1).setLayout(self.right_layout)
-
         # Tab widget, double click to compare and able to be removed
         self.tab_widget.setMovable(True)
         self.tab_widget.setTabsClosable(True)
@@ -400,22 +404,24 @@ class DataFrameViewer(QWidget):
         if self.tab_widget.count() > 1:
             self._bool = True
             self.incr += 1
-            tab_name = self.tab_widget.tabText(index)
 
             # Create new tab
-            new_tab = tab_name + "-" + str(self.incr)
+
             self.new_tab_widget = QTabWidget()
             self.new_tab_widget.tab_dict = {}
             self.new_tab_widget.setTabsClosable(True)
             dataframe = self.get_current_tab_dataframe()
-
+            tab_name = self.tab_widget.tabText(index) + '-' + str(self.incr)
+        
             # Make it that the user can't remove the last tab
             if self.new_tab_widget.count() == 0:
                 self.new_tab_widget.tabCloseRequested.connect(self.tabCloseRequested)
 
             # Ensure dataframe is not empty before creating splitter item
             if not dataframe.empty:
-                ExpandableText(dataframe, new_tab, self.new_tab_widget, index, self.table_split, self.model_dict)
+                ExpandableText(dataframe, tab_name, self.new_tab_widget,\
+                               index, self.table_split,\
+                               self.model_dict, self.all_table)
             else:
                 print("Cannot Compare, dataframe is empty!")
     
@@ -454,7 +460,7 @@ class DataFrameViewer(QWidget):
                 if isinstance(index_table, QTableView):
                     model = index_table.model()
                     model.text = text
-                    model.update_search_text(text)
+                    model.update_search_text()
 
         # Run through all the tabs if they exist
         if self.tab_widget:

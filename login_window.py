@@ -39,6 +39,8 @@ class LoginWindow(QWidget):
         self.register_button = QPushButton('Register', self)
         self.register_button.setVisible(False)
 
+        self.label = QLabel()
+
         self.login_button.clicked.connect(self.login)
         self.register_button.clicked.connect(self.register)
 
@@ -48,6 +50,7 @@ class LoginWindow(QWidget):
         layout.addWidget(self.password_edit)
         layout.addWidget(self.login_button)
         layout.addWidget(self.register_button)
+        layout.addWidget(self.label)
 
         self.setLayout(layout)
         self.setWindowTitle('Login Window')
@@ -116,13 +119,13 @@ class LoginWindow(QWidget):
     """
     def register_user(self, username, password, users):
         if username in users:
-            print("Username already exists. Please choose a different username.")
+            self.label.setText("Username already exists.")
         else:
             # Hash the password before storing it
             hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
             users[username] = {'password': hashed_password.decode('utf-8')}
             self.save_users(users, True)
-            print("User registered successfully.")
+            self.label.setText("User registered successfully.")
 
 
     """
@@ -136,7 +139,8 @@ class LoginWindow(QWidget):
                 print("Login successful. Welcome, {}!".format(username))
                 self.run_program()
                 return True
-        print("Invalid username or password.")
+        self.password_edit.selectAll()
+        self.label.setText("Invalid username or password.")
         return False
 
 

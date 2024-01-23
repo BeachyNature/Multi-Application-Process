@@ -111,7 +111,7 @@ class DataFrameTableModel(QAbstractTableModel):
 Setup the expandable text checkboxes and setup their individual tables that are loaded in
 """
 class ExpandableText(QWidget):
-    def __init__(self, dataframe, csv_name, tab_widget, index, splitter, dict):
+    def __init__(self, dataframe, csv_name, tab_widget, index, splitter, model_dict, all_table, table_dict):
         super().__init__()
         self.epic = {}
         self.is_expanded = False
@@ -120,8 +120,10 @@ class ExpandableText(QWidget):
         self.csv_name = csv_name
         self.tab_widget = tab_widget
         self.table_split = splitter
-        self.dict = dict
+        self.model_dict = model_dict
         self.index = index
+        self.all_table = all_table
+        self.table_dict = table_dict
 
         # Load the checkbox items
         self.column_checkboxes = self.create_column_checkboxes()
@@ -196,7 +198,7 @@ class ExpandableText(QWidget):
     Tells the model to load the next 100 rows
     """
     def load_more_data(self):
-        tab = self.tab_widget.tab_dict[self.csv_name]
+        tab = self.table_dict[self.csv_name]
 
         model = tab.model()
         
@@ -221,7 +223,7 @@ class ExpandableText(QWidget):
 
         tab_name = self.csv_name
         if not self.dataframe.empty:
-            if tab_name not in self.tab_widget.tab_dict:
+            if tab_name not in self.table_dict:
                 model = DataFrameTableModel(self.dataframe, self.column_checkboxes)
 
                 # Apply new model
@@ -230,9 +232,9 @@ class ExpandableText(QWidget):
                 table.setSelectionMode(QAbstractItemView.ExtendedSelection)
 
                 # Make tab for loaded data - save model
-                self.dict[table] = model
+                self.model_dict[table] = model
+                self.table_dict[self.csv_name] = table
                 self.tab_widget.addTab(table, self.csv_name)
-                self.tab_widget.tab_dict[self.csv_name] = table
 
                 # Initial split: add the new tab widget to the QSplitter
                 if isinstance(self.index, int):
@@ -244,12 +246,13 @@ class ExpandableText(QWidget):
                         self.table_split.widget(1).addTab(table, self.csv_name)
                 
                 # Allow for batch scrolling to work for any of the tables
-                for i, j in self.dict.items():
+                for i, j in self.model_dict.items():
+                    print(i)
                     i.verticalScrollBar().valueChanged.connect(self.load_more_data)
                     self.check_status(j)
 
             # Enable multi-selection for tables
-            for tab_name, table_widget in self.tab_widget.tab_dict.items():
+            for tab_name, table_widget in self.table_dict.items():
                     selection_model = table_widget.selectionModel()
                     selection_model.selectionChanged.connect(self.handle_selection_changed)
         else:
@@ -272,8 +275,8 @@ class ExpandableText(QWidget):
         #TODO: Need to get user selections working
         current_index = self.tab_widget.currentIndex()
         current_tab_name = self.tab_widget.tabText(current_index)
-        table = self.tab_widget.tab_dict[current_tab_name]
-        model = self.dict[table]
+        table = self.table_dict[current_tab_name]
+        model = self.model_dict[table]
 
         # # Get the index selection values
         # selected_indexes = table.selectionModel().selectedIndexes()
@@ -335,7 +338,7 @@ class DataFrameViewer(QWidget):
 
         # Setup tab dictionary
         self.model_dict = {}
-        self.tab_widget.tab_dict = {}
+        self.table_dict = {}
 
         # Search bar and Checkbox
         search_bar = QLineEdit()
@@ -350,7 +353,8 @@ class DataFrameViewer(QWidget):
         # Run the data through the expanded text list
         for csv_name, df in self.data.items():
             text_widget = ExpandableText(df, csv_name, self.tab_widget, None,
-                                         self.table_split, self.model_dict)
+                                         self.table_split, self.model_dict, self.all_table,
+                                         self.table_dict)
             labels_layout.addWidget(text_widget)
 
         # Configure layouts
@@ -402,16 +406,15 @@ class DataFrameViewer(QWidget):
 
         # Remove the tab that you want to switch over
         if self.tab_widget.count() > 1:
+            tab_name = self.tab_widget.tabText(index)
             self._bool = True
             self.incr += 1
 
             # Create new tab
-
             self.new_tab_widget = QTabWidget()
-            self.new_tab_widget.tab_dict = {}
             self.new_tab_widget.setTabsClosable(True)
             dataframe = self.get_current_tab_dataframe()
-            tab_name = self.tab_widget.tabText(index) + '-' + str(self.incr)
+            new_name = tab_name + '-' + str(self.incr)
         
             # Make it that the user can't remove the last tab
             if self.new_tab_widget.count() == 0:
@@ -419,14 +422,14 @@ class DataFrameViewer(QWidget):
 
             # Ensure dataframe is not empty before creating splitter item
             if not dataframe.empty:
-                ExpandableText(dataframe, tab_name, self.new_tab_widget,\
-                               index, self.table_split,\
-                               self.model_dict, self.all_table)
+                ExpandableText(dataframe, new_name, self.new_tab_widget,
+                               index, self.table_split, self.model_dict,
+                               self.all_table, self.table_dict)
             else:
                 print("Cannot Compare, dataframe is empty!")
     
             # Remove tab that user wants to compare
-            self.tab_widget.tab_dict.pop(tab_name)
+            self.table_dict.pop(tab_name)
             self.tab_widget.removeTab(index)
 
     """

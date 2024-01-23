@@ -1,12 +1,16 @@
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QWidget
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-import matplotlib.pyplot as plt
-import numpy as np
 from matplotlib.widgets import CheckButtons
+import matplotlib.pyplot as plt
 from matplotlib import gridspec
+import numpy as np
 
 import landing_page
 
+
+"""
+This loads basoc plots that the user can load
+"""
 class StaticPlots(QWidget):
     def __init__(self):
         super().__init__()
@@ -33,7 +37,6 @@ class StaticPlots(QWidget):
         s5 = np.sin(12*np.pi*t)
         s6 = np.sin(14*np.pi*t)
 
-        # Plot the multiple lineplot;
         # if user has this selected in their settings
         if data['Plot Configure'] is not False:
             self.ax = self.plot_bottom()

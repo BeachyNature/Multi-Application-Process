@@ -60,6 +60,7 @@ class LoginWindow(QWidget):
     def check_user_file(self):
         if os.path.exists(self.file_path):
             self.username_edit.setText(next(iter(self.load_users())))
+            self.password_edit.returnPressed.connect(self.login)
             self.password_edit.setFocus()
         else:
             print("Welcome to MAPS-Python! In order to start, you need to register.")

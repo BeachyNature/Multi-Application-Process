@@ -1,11 +1,11 @@
-import sys
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QLabel, QWidget, QSlider, QPushButton, QTextEdit, QAction, QListWidget, QFileDialog
+from PyQt5.QtWidgets import QMainWindow, QVBoxLayout, QHBoxLayout, QLabel, QWidget, QSlider, QPushButton, QTextEdit, QAction, QListWidget, QFileDialog
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QMutex, QMutexLocker
-import cv2
-from PyQt5.QtGui import QPixmap, QImage, QWindow
+from PyQt5.QtGui import QPixmap, QImage
 from PIL import Image
 import pytesseract
+import cv2
 
+######## Uncomment this if you recieved error that Tesseract is not in your Path. #############
 # pytesseract.pytesseract.tesseract_cmd = "C:/Program Files/Tesseract-OCR/tesseract.exe"
 
 class TextCaptureThread(QThread):

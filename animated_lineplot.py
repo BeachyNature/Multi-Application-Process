@@ -1,10 +1,14 @@
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QPushButton, QWidget, QSlider
+from PyQt5.QtWidgets import QVBoxLayout, QPushButton, QWidget, QSlider
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.animation import FuncAnimation
+import matplotlib.pyplot as plt
+import numpy as np
 
+
+"""
+Runs the animation in its own thread
+"""
 class WorkerThread(QThread):
     update_signal = pyqtSignal(int)
 
@@ -27,6 +31,10 @@ class WorkerThread(QThread):
         self.animation._stop = not self.fargs[0].animation_running
         self.animation._start()
 
+
+"""
+This runs the 2D Animated lineplot that can be interacted with
+"""
 class MatplotlibWidget(QWidget):
     def __init__(self, parent=None):
         super(MatplotlibWidget, self).__init__(parent)
@@ -39,7 +47,10 @@ class MatplotlibWidget(QWidget):
         self.setLayout(layout)
 
         self.animation_running = False
-
+    
+    """
+    Update the lineplot based on the animation
+    """
     def update_plot(self, frame):
         self.ax.clear()  # Clear previous plot
         self.ax.plot(
@@ -67,6 +78,10 @@ class MatplotlibWidget(QWidget):
         self.ax.legend()
         self.canvas.draw()
 
+
+    """
+    Slider that can adjust the animation progress
+    """
     def animate_slider(self, frame, duration, slider_end_val):
         num_steps = 100
         step_size = frame / num_steps
@@ -78,9 +93,16 @@ class MatplotlibWidget(QWidget):
             plt.pause(duration / num_steps)
             self.update_plot(int(val))
 
+    """
+    A way to pause the animation
+    """
     def stop_animation(self):
         self.animation_running = False
 
+
+"""
+Main window that has the controlling pieces of the created line plot
+"""
 class MainWindow(QWidget):
     def __init__(self):
         super(MainWindow, self).__init__()
@@ -102,9 +124,9 @@ class MainWindow(QWidget):
         self.init_layout()
         self.worker_thread = None
 
-    
-    #TODO: Remove 2d plot into its own window, have this as a central hub to select
-    # Initialize main window items
+    """
+    Initalizes the layout of the window
+    """
     def init_layout(self):
         button_layout = QVBoxLayout()
         button_layout.addWidget(self.start_button)
@@ -118,7 +140,9 @@ class MainWindow(QWidget):
         self.setLayout(main_layout)
         self.setGeometry(100, 100, 1600, 900)
 
-    # Starts tbe 2D Animation
+    """
+    Start incremeneting the slider that starts the animation
+    """
     def start_animation(self):
         if not self.central_widget.animation_running:
             self.central_widget.animation_running = True
@@ -128,7 +152,9 @@ class MainWindow(QWidget):
             self.slider_timer.timeout.connect(self.increment_slider)
             self.slider_timer.start(100)  # Adjust the interval as needed
 
-    # Increments the slider and stops when maxed out.
+    """
+    Increment the slider as the animation moves on
+    """
     def increment_slider(self):
         current_value = self.slider.value()
         if current_value < self.slider.maximum():
@@ -137,12 +163,17 @@ class MainWindow(QWidget):
             self.slider_timer.stop()
             self.central_widget.animation_running = False
 
-    # TODO: Program like 3d plot with resume and pause
+    """
+    Stop the running animations when the user presses pause button
+    """
     def stop_animation(self):
+        # TODO: Program like 3d plot with resume and pause
         if self.central_widget.animation_running:
             self.central_widget.stop_animation()
 
-    # Terminate working thread if slider is interupted
+    """
+    Run the animation on the working thread and stop by the animation is not running
+    """
     def slider_changed(self, value):
         frame = value
         self.central_widget.update_plot(frame)
@@ -150,3 +181,11 @@ class MainWindow(QWidget):
             if self.worker_thread is not None:
                 self.worker_thread.terminate()
                 self.worker_thread = None
+
+
+# THIS IS FOR TESTING
+# if __name__ == '__main__':
+#     app = QApplication(sys.argv)
+#     mainWin =  MainWindow()
+#     mainWin.show()
+#     sys.exit(app.exec_())

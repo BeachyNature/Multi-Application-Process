@@ -6,8 +6,11 @@ import three_d_plot
 import multiple_csv
 import multiple_plots
 import video_replay
-import time
 
+
+"""
+This is a landing page, this is for the user to select what tools they want to run. This is subject to change.
+"""
 class MainWindow(QMainWindow):
     def __init__(self):
         super(MainWindow, self).__init__()
@@ -28,7 +31,7 @@ class MainWindow(QMainWindow):
         self.launch_btn = QPushButton('Launch')
         self.launch_btn.clicked.connect(self.run_files)
 
-        # Checkboxes
+        # Checkboxes - configures the different applications that load and whats within them.
         self.check_dict = {}
         self.check_names = {'CSV Loader': multiple_csv.FileDialog,
                             '3D Plotter': three_d_plot.ThreeDPlot,
@@ -42,6 +45,10 @@ class MainWindow(QMainWindow):
         self.layout.addWidget(self.launch_btn)
         self.define_checkbox()
 
+
+    """
+    Create the checkboxes and their functionaility
+    """
     def define_checkbox(self):
         self.layout_main = QVBoxLayout()
 
@@ -61,17 +68,29 @@ class MainWindow(QMainWindow):
                 self.layout_main.addWidget(checkboxes)
         self._bool = True
 
+
+    """
+    Run the user preference window with the checkboxes
+    """
     def run_preferences(self):
         self.pre_window.setLayout(self.layout_main)
         self.pre_window.setGeometry(300, 300, 300, 150)
         self.pre_window.setWindowTitle('User Preference Window')
         self.pre_window.show()
 
+
+    """
+    Change the users preferences in their created json file
+    """
     def check_button_act(self, state):
         sender = self.sender()
         if sender.isEnabled() and self._bool:
             login_window.LoginWindow.save_checkbox_state(self.user_instance, sender.text(), state)
 
+
+    """
+    Run the Selected files based on checkbox preferences
+    """
     def run_files(self):
         check_json = update_file()
 
@@ -84,7 +103,7 @@ class MainWindow(QMainWindow):
 
 
 """
-Gets the user configuration settings, accessible from other classes
+Gets the user configuration settings, accessible from other classes/files
 """
 def update_file():
     user_instance = login_window.LoginWindow()

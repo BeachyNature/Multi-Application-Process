@@ -183,38 +183,40 @@ class ExpandableText(QWidget):
     def setup_data(self):
 
         tab_name = self.csv_name
-        if tab_name not in self.tab_widget.tab_dict:
-            model = DataFrameTableModel(self.dataframe, self.column_checkboxes)
+        if not self.dataframe.empty:
+            if tab_name not in self.tab_widget.tab_dict:
+                model = DataFrameTableModel(self.dataframe, self.column_checkboxes)
 
-            # Apply new model
-            table = QTableView()
-            table.setModel(model)
-            table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+                # Apply new model
+                table = QTableView()
+                table.setModel(model)
+                table.setSelectionMode(QAbstractItemView.ExtendedSelection)
 
-            # Make tab for loaded data - save model
-            self.dict[table] = model
-            self.tab_widget.addTab(table, self.csv_name)
-            self.tab_widget.tab_dict[self.csv_name] = table
+                # Make tab for loaded data - save model
+                self.dict[table] = model
+                self.tab_widget.addTab(table, self.csv_name)
+                self.tab_widget.tab_dict[self.csv_name] = table
 
-            # Initial split: add the new tab widget to the QSplitter
-            if isinstance(self.index, int):
-                if not self.first_split:
-                    self.first_split = True
-                    self.table_split.insertWidget(1, self.tab_widget)
-                else:
-                    # Subsequent double-taps: add the new tab widget to the initially split tab widget
-                    self.table_split.widget(1).addTab(table, self.csv_name)
-            
-            # Allow for batch scrolling to work for any of the tables
-            for i, j in self.dict.items():
-                i.verticalScrollBar().valueChanged.connect(self.load_more_data)
-                self.check_status(j)
+                # Initial split: add the new tab widget to the QSplitter
+                if isinstance(self.index, int):
+                    if not self.first_split:
+                        self.first_split = True
+                        self.table_split.insertWidget(1, self.tab_widget)
+                    else:
+                        # Subsequent double-taps: add the new tab widget to the initially split tab widget
+                        self.table_split.widget(1).addTab(table, self.csv_name)
+                
+                # Allow for batch scrolling to work for any of the tables
+                for i, j in self.dict.items():
+                    i.verticalScrollBar().valueChanged.connect(self.load_more_data)
+                    self.check_status(j)
 
-        # Enable multi-selection for tables
-        for tab_name, table_widget in self.tab_widget.tab_dict.items():
-                selection_model = table_widget.selectionModel()
-                selection_model.selectionChanged.connect(self.handle_selection_changed)
-    
+            # Enable multi-selection for tables
+            for tab_name, table_widget in self.tab_widget.tab_dict.items():
+                    selection_model = table_widget.selectionModel()
+                    selection_model.selectionChanged.connect(self.handle_selection_changed)
+        else:
+            print(f"{tab_name} is empty! Table unable to load!")
     
     """
     Toggle the columns that the user selects in the options menu
@@ -229,13 +231,13 @@ class ExpandableText(QWidget):
     """
     def handle_selection_changed(self):
 
-        # Get the correct table
+        #TODO: Need to get user selections working
         current_index = self.tab_widget.currentIndex()
         current_tab_name = self.tab_widget.tabText(current_index)
         table = self.tab_widget.tab_dict[current_tab_name]
         model = self.dict[table]
 
-
+        # Get the index selection values
         selected_indexes = table.selectionModel().selectedIndexes()
         for index in selected_indexes:
             row = index.row()
@@ -271,6 +273,10 @@ class DataFrameViewer(QWidget):
         self._bool = False
         self.init_ui()
 
+
+    """
+    Setup the main window display
+    """
     def init_ui(self):
 
         # Setup Layouts

@@ -428,7 +428,6 @@ class DataFrameViewer(QWidget):
                 print("Cannot Compare, dataframe is empty!")
     
             # Remove tab that user wants to compare
-            self.table_dict.pop(tab_name)
             self.tab_widget.removeTab(index)
 
     """

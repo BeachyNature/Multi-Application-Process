@@ -247,7 +247,6 @@ class ExpandableText(QWidget):
                 
                 # Allow for batch scrolling to work for any of the tables
                 for i, j in self.model_dict.items():
-                    print(i)
                     i.verticalScrollBar().valueChanged.connect(self.load_more_data)
                     self.check_status(j)
 

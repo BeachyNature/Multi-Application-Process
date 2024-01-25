@@ -3,7 +3,11 @@ from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QMutex, QMutexLocker
 from PyQt5.QtGui import QPixmap, QImage
 from PIL import Image
 import pytesseract
+import py7zr
+import os
+import shutil
 import cv2
+import atexit
 
 ######## Uncomment this if you recieved error that Tesseract is not in your Path. #############
 # pytesseract.pytesseract.tesseract_cmd = "C:/Program Files/Tesseract-OCR/tesseract.exe"
@@ -202,6 +206,7 @@ class VideoPlayerApp(QMainWindow):
         reset_speed_action.triggered.connect(self.reset_playback_speed)
         playback_menu.addAction(reset_speed_action)
 
+
     """
     Toggle the visibility of the text capture window
     """
@@ -259,7 +264,7 @@ class VideoPlayerApp(QMainWindow):
         self.main.show()
 
 
-"""
+"""     
 Inital window that asks user what files they want to look at.
 """
 class VideoSelector(QWidget):
@@ -269,6 +274,7 @@ class VideoSelector(QWidget):
         self.init_ui()
 
     def init_ui(self):
+
         # Create a layout
         layout = QVBoxLayout()
 
@@ -283,8 +289,17 @@ class VideoSelector(QWidget):
         select_button = QPushButton('Select Video Files')
         select_button.clicked.connect(self.show_file_dialog)
 
+        zip_files_button = QPushButton('Load Zip File')
+        zip_files_button.clicked.connect(self.open_file_dialog)
+
+        # Temp file path
+        user_path = os.path.expanduser("~")
+        program_folder  = os.path.join(user_path, "MAPS-Python")
+        self.extracted_folder = os.path.join(program_folder,'Temp')
+
         # Add widgets to the layout
         layout.addWidget(select_button)
+        layout.addWidget(zip_files_button)
         layout.addWidget(self.list_widget)
         layout.addWidget(self.process_button)
         self.setLayout(layout)
@@ -318,3 +333,49 @@ class VideoSelector(QWidget):
         self.main = VideoPlayerApp(video_paths)
         self.main.show()
         self.close()
+
+
+
+    """
+    If user wants to load a zip file 
+    """
+    def open_file_dialog(self):
+        file_dialog = QFileDialog()
+        file_path, _ = file_dialog.getOpenFileName(self, 'Open 7z Archive', '', '7z Archives (*.7z)')
+
+        if file_path:
+            self.list_files_in_7z(file_path)
+
+
+    """
+    Get the extracted video files
+    """
+    def list_files_in_7z(self, archive_path):
+        try:
+
+            # Make Temp folder
+            if not os.path.exists(self.extracted_folder):
+                os.makedirs(self.extracted_folder)
+
+            # Extract the contents of the 7z archive
+            with py7zr.SevenZipFile(archive_path, mode='r') as archive:
+                archive.extractall(self.extracted_folder)
+
+            # Load the MP4 filea
+            self.list_widget.clear()
+            for root, dirs, files in os.walk(self.extracted_folder):
+                for file in files:
+                    self.list_widget.addItem(os.path.join(root, file))
+
+            self.process_button.setVisible(True)
+
+        except Exception as e:
+            self.list_widget.clear()
+            self.list_widget.addItem(f"Error: {e}")
+
+
+    """
+    Removes extracted save files
+    """
+    def clear_cache(self):
+        shutil.rmtree(self.extracted_folder)

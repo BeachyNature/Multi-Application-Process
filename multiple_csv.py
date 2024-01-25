@@ -1,4 +1,5 @@
 import os
+import sys
 import pandas as pd
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
@@ -139,9 +140,9 @@ class FileDialog(QWidget):
 
 
 # THIS IS FOR TESTING
-# if __name__ == '__main__':
-#     app = QApplication(sys.argv)
-#     ex = FileDialog()
-#     ex.show()
-#     sys.exit(app.exec_())
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    ex = FileDialog()
+    ex.show()
+    sys.exit(app.exec_())
 

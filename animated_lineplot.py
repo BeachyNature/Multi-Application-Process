@@ -1,14 +1,14 @@
-from PyQt5.QtWidgets import QVBoxLayout, QPushButton, QWidget, QSlider
+from PyQt5.QtWidgets import QApplication, QVBoxLayout, QPushButton, QWidget, QSlider, QMessageBox, QTableWidget, QTableWidgetItem
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.animation import FuncAnimation
+from matplotlib.widgets import LassoSelector
+from matplotlib.path import Path
 import matplotlib.pyplot as plt
+import pandas as pd
 import numpy as np
+import sys
 
-
-"""
-Runs the animation in its own thread
-"""
 class WorkerThread(QThread):
     update_signal = pyqtSignal(int)
 
@@ -31,10 +31,6 @@ class WorkerThread(QThread):
         self.animation._stop = not self.fargs[0].animation_running
         self.animation._start()
 
-
-"""
-This runs the 2D Animated lineplot that can be interacted with
-"""
 class MatplotlibWidget(QWidget):
     def __init__(self, parent=None):
         super(MatplotlibWidget, self).__init__(parent)
@@ -47,40 +43,96 @@ class MatplotlibWidget(QWidget):
         self.setLayout(layout)
 
         self.animation_running = False
-    
+        self.selected_points = {}
+
+        # Connect lasso selection to the callback
+        self.lasso = LassoSelector(self.ax, onselect=self.on_lasso_selection)
+
+        # Set seed for reproducibility
+        np.random.seed(42)
+
+        #SETUP
+        num_points = 100
+        x_values = np.arange(num_points)
+        names = ['Alice', 'Bob', 'Charlie']
+
+        # Creating a random dataframe with 5 rows and 3 columns
+        data = {'Name': np.concatenate([[name] * num_points for name in names]),
+                'X': np.tile(x_values, len(names)),
+                'Y': np.concatenate([2 * x_values + np.random.normal(0, 5, num_points) for _ in range(len(names))])}
+
+        self.df = pd.DataFrame(data)
+
+
     """
-    Update the lineplot based on the animation
+    User is able to select items in the plot
+    """
+    def on_lasso_selection(self, verts):
+        # Callback function for lasso selection
+        path = Path(verts)
+        selected_points_data = {}
+
+        for name, group in self.df.groupby('Name'):
+            x_data = group['X'].tolist()
+            y_data = group['Y'].tolist()
+
+            points_inside_lasso = [i for i in range(len(x_data)) if path.contains_point((x_data[i], y_data[i]))]
+
+            for i in points_inside_lasso:
+                if name in selected_points_data:
+                    selected_points_data[name].append([x_data[i], y_data[i]])
+                else:
+                    selected_points_data[name] = [[x_data[i], y_data[i]]]
+
+        self.selected_points = selected_points_data
+        self.selected_values()
+
+
+    """
+    Update the plot by animating
     """
     def update_plot(self, frame):
-        self.ax.clear()  # Clear previous plot
-        self.ax.plot(
-            np.linspace(0, 10, 100)[:frame],
-            np.cumsum(np.random.randn(100))[:frame],
-            label='Line 1',
-            marker='o',
-            linestyle='-',
-            markersize=8
-        )
-
-        self.ax.plot(
-            np.linspace(0, 10, 50)[:frame],
-            np.cumsum(np.random.randn(50))[:frame],
-            label='Line 2',
-            marker='o',
-            linestyle='-',
-            markersize=8
-        )
-
-        # Limiter
-        self.ax.set_ylim(-15, 20)
-        self.ax.set_xlim(0, 10)
+        self.ax.clear()
+        for name, group in self.df.groupby('Name'):
+            self.x_data = group['X'][:frame]
+            self.y_data = group['Y'][:frame]
+            
+            self.ax.plot(
+                self.x_data,
+                self.y_data,
+                label=name,
+                marker='o',
+                linestyle='-',
+                markersize=8
+            )
 
         self.ax.legend()
         self.canvas.draw()
 
 
     """
-    Slider that can adjust the animation progress
+    Select the items in the line plot
+    """
+    def selected_values(self):
+        # Highlight selected points with a different marker or color
+        if self.selected_points:
+            for key, value in self.selected_points.items():
+                # Separating first and second values
+                x_value, y_value = zip(*value)
+    
+                self.ax.scatter(
+                    x_value,
+                    y_value,
+                    marker='X',
+                    color='red',
+                    s=100
+                )
+
+        self.canvas.draw()
+
+
+    """
+    Move the slider with the animation frames
     """
     def animate_slider(self, frame, duration, slider_end_val):
         num_steps = 100
@@ -93,15 +145,16 @@ class MatplotlibWidget(QWidget):
             plt.pause(duration / num_steps)
             self.update_plot(int(val))
 
+
     """
-    A way to pause the animation
+    Stops the animation from playing
     """
     def stop_animation(self):
         self.animation_running = False
 
 
 """
-Main window that has the controlling pieces of the created line plot
+Main Window that contains the lineplot
 """
 class MainWindow(QWidget):
     def __init__(self):
@@ -115,22 +168,23 @@ class MainWindow(QWidget):
         self.stop_button = QPushButton('Stop', self)
         self.stop_button.clicked.connect(self.stop_animation)
 
+        self.info_button = QPushButton('Show Info', self)
+        self.info_button.clicked.connect(self.show_selected_info)
+
         self.slider_timer = None
         self.slider = QSlider(self)
-        self.slider.setOrientation(1)  # 1 represents vertical orientation
+        self.slider.setOrientation(1)
         self.slider.setRange(0, 100)
         self.slider.valueChanged.connect(self.slider_changed)
 
         self.init_layout()
         self.worker_thread = None
 
-    """
-    Initalizes the layout of the window
-    """
     def init_layout(self):
         button_layout = QVBoxLayout()
         button_layout.addWidget(self.start_button)
         button_layout.addWidget(self.stop_button)
+        button_layout.addWidget(self.info_button)
 
         main_layout = QVBoxLayout()
         main_layout.addLayout(button_layout)
@@ -140,21 +194,13 @@ class MainWindow(QWidget):
         self.setLayout(main_layout)
         self.setGeometry(100, 100, 1600, 900)
 
-    """
-    Start incremeneting the slider that starts the animation
-    """
     def start_animation(self):
         if not self.central_widget.animation_running:
             self.central_widget.animation_running = True
-
-            # Increment the slider value using a QTimer
             self.slider_timer = QTimer(self)
             self.slider_timer.timeout.connect(self.increment_slider)
-            self.slider_timer.start(100)  # Adjust the interval as needed
+            self.slider_timer.start(100)
 
-    """
-    Increment the slider as the animation moves on
-    """
     def increment_slider(self):
         current_value = self.slider.value()
         if current_value < self.slider.maximum():
@@ -163,17 +209,10 @@ class MainWindow(QWidget):
             self.slider_timer.stop()
             self.central_widget.animation_running = False
 
-    """
-    Stop the running animations when the user presses pause button
-    """
     def stop_animation(self):
-        # TODO: Program like 3d plot with resume and pause
         if self.central_widget.animation_running:
             self.central_widget.stop_animation()
 
-    """
-    Run the animation on the working thread and stop by the animation is not running
-    """
     def slider_changed(self, value):
         frame = value
         self.central_widget.update_plot(frame)
@@ -181,11 +220,50 @@ class MainWindow(QWidget):
             if self.worker_thread is not None:
                 self.worker_thread.terminate()
                 self.worker_thread = None
+    
+    def show_selected_info(self):
+        data_dict = self.central_widget.selected_points
+        if data_dict:
+             # Use list comprehension to flatten the data
+            rows = [(key, x, y) for key, values_list in data_dict.items() for x, y in values_list]
+            df = pd.DataFrame(rows, columns=self.central_widget.df.columns)
+        else:          
+            QMessageBox.warning(self, 'No Selection', 'No points selected.')
+            df = self.central_widget.df
+
+        # Setup table
+        self.table_window = QWidget()
+        table_widget = QTableWidget(self)
+        table_widget.setColumnCount(2)
+        table_widget.setHorizontalHeaderLabels(['X', 'Y'])
+
+        # Create layout
+        layout = QVBoxLayout()
+        layout.addWidget(table_widget)
+        self.table_window.setLayout(layout)
+
+        # Set the number of rows and columns
+        table_widget.setRowCount(df.shape[0])
+        table_widget.setColumnCount(df.shape[1])
+
+        # Set column headers
+        table_widget.setHorizontalHeaderLabels(df.columns)
+
+        # Populate the QTableWidget with DataFrame data
+        for i in range(df.shape[0]):
+            for j in range(df.shape[1]):
+                item = QTableWidgetItem(str(df.iloc[i, j]))
+                table_widget.setItem(i, j, item)
+
+        # Launch the Window  to display selected indexes
+        self.table_window.show()
+
 
 
 # THIS IS FOR TESTING
-# if __name__ == '__main__':
-#     app = QApplication(sys.argv)
-#     mainWin =  MainWindow()
-#     mainWin.show()
-#     sys.exit(app.exec_())
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    mainWin =  MainWindow()
+    mainWin.show()
+    sys.exit(app.exec_())
+            

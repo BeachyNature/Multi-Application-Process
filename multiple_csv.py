@@ -139,10 +139,10 @@ class FileDialog(QWidget):
         self.progress_bar.setValue(progress_value)
 
 
-# THIS IS FOR TESTING
-if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    ex = FileDialog()
-    ex.show()
-    sys.exit(app.exec_())
+# # THIS IS FOR TESTING
+# if __name__ == '__main__':
+#     app = QApplication(sys.argv)
+#     ex = FileDialog()
+#     ex.show()
+#     sys.exit(app.exec_())
 

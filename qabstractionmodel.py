@@ -1,11 +1,10 @@
 import pandas as pd
-import time
 from itertools import product
 from PyQt5.QtGui import QColor
 from PyQt5.QtCore import Qt, QAbstractTableModel
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,\
                             QTableView, QCheckBox, QScrollArea, QTabWidget, QSplitter,\
-                            QAbstractItemView, QFileDialog
+                            QFileDialog
 
 
 """
@@ -22,13 +21,25 @@ class DataFrameTableModel(QAbstractTableModel):
         self._selected_indexes = set()
         self.update_visible_columns()
 
+
+    """
+    Row counter that factors in batch size loading
+    """
     def rowCount(self, parent=None):
         return min(self.visible_rows, len(self._dataframe))
 
+
+    """
+    Makes columns visible or not
+    """
     def update_visible_columns(self):
         self.visible_columns = [col for col, checkbox in self.column_checkboxes.items() if checkbox.isChecked()]
         self.layoutChanged.emit()
 
+
+    """
+    Sets up the table from the dataframes
+    """
     def data(self, index, role=Qt.DisplayRole):
         if role == Qt.DisplayRole:
             column_name = self.visible_columns[index.column()]
@@ -38,9 +49,15 @@ class DataFrameTableModel(QAbstractTableModel):
                 return QColor("yellow")
         return None
 
+    """
+    Column total from dataframe
+    """
     def columnCount(self, parent=None):
         return len(self.visible_columns)
     
+    """
+    Creates the headers for the table
+    """
     def headerData(self, section, orientation, role=Qt.DisplayRole):
         if role == Qt.DisplayRole:
             if orientation == Qt.Horizontal:
@@ -49,7 +66,9 @@ class DataFrameTableModel(QAbstractTableModel):
                 return str(section + 1)
         return None
 
-
+    """
+    Sets a flag for selectable items
+    """
     def flags(self, index):
         return Qt.ItemIsEnabled | Qt.ItemIsSelectable
     
@@ -111,6 +130,9 @@ class DataFrameTableModel(QAbstractTableModel):
         return
 
 
+    """
+    Remove column from table when checked off
+    """
     def setData(self, index, value, role=Qt.EditRole):
         if role == Qt.CheckStateRole:
             if index.isValid():
@@ -122,11 +144,12 @@ class DataFrameTableModel(QAbstractTableModel):
                 return True
         return False
 
+
 """
 Setup the expandable text checkboxes and setup their individual tables that are loaded in
 """
 class ExpandableText(QWidget):
-    def __init__(self, dataframe, csv_name, tab_widget, index, splitter, model_dict, all_table, table_dict, csv_button):
+    def __init__(self, dataframe, csv_name, tab_widget, index, splitter, model_dict, table_dict, csv_button):
         super().__init__()
         self.saved_data = None
         self.is_expanded = False
@@ -137,13 +160,11 @@ class ExpandableText(QWidget):
         self.table_split = splitter
         self.model_dict = model_dict
         self.index = index
-        self.all_table = all_table
         self.table_dict = table_dict
-        self.csv_button = csv_button
 
         # Load the checkbox items and connect save csv button
         self.column_checkboxes = self.create_column_checkboxes()
-        self.csv_button.clicked.connect(self.save_csv)
+        csv_button.clicked.connect(self.save_csv)
 
         # If the table is for inital setup or comparison load in
         if isinstance(self.index, int):
@@ -215,23 +236,17 @@ class ExpandableText(QWidget):
     """
     Tells the model to load the next 100 rows
     """
-    def load_more_data(self, widget, value):
-        for i, j in self.model_dict.items():
-            current_value = i.verticalScrollBar().value()
-            max_value = i.verticalScrollBar().maximum()
+    def load_more_data(self, table, value):
+            current_value = table.verticalScrollBar().value()
+            max_value = table.verticalScrollBar().maximum()
 
             def is_within_range(value1, value2, range_limit=20):
                 return abs(value1 - value2) <= range_limit
         
             if is_within_range(current_value, max_value):
                 if len(self.dataframe) > 100:
-                    self.scroll_table_to_row(j)
-
-
-    def scroll_table_to_row(self, table):
-        table.update_visible_rows()
-        table.update_search_text()
-
+                    self.model_dict[table].update_visible_rows()
+                    self.model_dict[table].update_search_text()
 
 
     """
@@ -369,7 +384,7 @@ class DataFrameViewer(QWidget):
         # Run the data through the expanded text list
         for csv_name, df in self.data.items():
             text_widget = ExpandableText(df, csv_name, self.tab_widget, None,
-                                         self.table_split, self.model_dict, self.all_table,
+                                         self.table_split, self.model_dict,
                                          self.table_dict, self.csv_button)
             labels_layout.addWidget(text_widget)
 
@@ -440,7 +455,7 @@ class DataFrameViewer(QWidget):
             if not dataframe.empty:
                 ExpandableText(dataframe, new_name, self.new_tab_widget,
                                index, self.table_split, self.model_dict,
-                               self.all_table, self.table_dict, self.csv_button)
+                               self.table_dict, self.csv_button)
             else:
                 print("Cannot Compare, dataframe is empty!")
     

@@ -103,8 +103,9 @@ class FileDialog(QWidget):
             self.label.setText(f"Processing {file_path}")
         except UnicodeDecodeError:
             df = pd.DataFrame()
-            self.label.setText(f"Error decoding file {file_path}. File Empty.")
+            self.label.setText(f"Error decoding file {file_path}.")
         except Exception as e:
+            df = pd.DataFrame()
             self.label.setText(f"An error occurred while processing {file_path}: {e}")
         self.create_table(df, csv_name, idx)
 
@@ -140,9 +141,9 @@ class FileDialog(QWidget):
 
 
 # THIS IS FOR TESTING
-# if __name__ == '__main__':
-#     app = QApplication(sys.argv)
-#     ex = FileDialog()
-#     ex.show()
-#     sys.exit(app.exec_())
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    ex = FileDialog()
+    ex.show()
+    sys.exit(app.exec_())
 

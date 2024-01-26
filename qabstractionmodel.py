@@ -266,10 +266,12 @@ class ExpandableText(QWidget):
                 
                 # Allow for batch scrolling to work for any of the tables
                 table.verticalScrollBar().valueChanged.connect(self.load_more_data)
+                table.selectionModel().selectionChanged.connect(self.update_view)
+                self.check_status(model)
 
-            # Enable multi-selection for tables
-            for tab_name, table_widget in self.table_dict.items():
-                table_widget.selectionModel().selectionChanged.connect(self.update_view)
+            # # Enable multi-selection for tables
+            # for tab_name, table_widget in self.table_dict.items():
+            #     table_widget.selectionModel().selectionChanged.connect(self.update_view)
         else:
             print(f"{tab_name} is empty! Table unable to load!")
 
@@ -296,7 +298,6 @@ class ExpandableText(QWidget):
                 header = model.headerData(col, Qt.Horizontal)
                 selected_data[header] = selected_data.get(header, []) + [model._dataframe.iloc[row, col]]
 
-        # Save data to dataframe
         self.saved_data = pd.DataFrame(selected_data)
 
 
@@ -308,17 +309,16 @@ class ExpandableText(QWidget):
             table_widget.selectionModel().clear()
 
 
-    """
-    Save the selected data to a csv when pressed
-    """
     def save_csv(self):
         if self.saved_data is not None:
-            file_dialog = QFileDialog()
-            file_dialog.setAcceptMode(QFileDialog.AcceptSave)
-            file_path, _ = file_dialog.getSaveFileName(self, "Save Selected Data", "", "CSV Files (*.csv)")
-            if file_path:
-                self.saved_data.to_csv(file_path, index=False)
-                print("Selected Data saved to:", file_path)
+            if not self.saved_data.empty:
+                file_dialog = QFileDialog()
+                file_dialog.setAcceptMode(QFileDialog.AcceptSave)
+                file_path, _ = file_dialog.getSaveFileName(self, "Save Selected Data", "", "CSV Files (*.csv)")
+                if file_path:
+                    self.saved_data.to_csv(file_path, index=False)
+                    print("Selected Data saved to:", file_path)
+                print(f"{self.saved_data = }")
         return 
 
 """

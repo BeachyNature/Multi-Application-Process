@@ -15,14 +15,15 @@ class DataFrameTableModel(QAbstractTableModel):
     def __init__(self, dataframe, column_checkboxes, parent=None):
         super(DataFrameTableModel, self).__init__(parent)
         self.highlighted_cells = []
-        self.dataframe = dataframe
+        self._dataframe = dataframe
         self.column_checkboxes = column_checkboxes
         self.visible_rows = 100
         self.text = None
+        self._selected_indexes = set()
         self.update_visible_columns()
 
     def rowCount(self, parent=None):
-        return min(self.visible_rows, len(self.dataframe))
+        return min(self.visible_rows, len(self._dataframe))
 
     def update_visible_columns(self):
         self.visible_columns = [col for col, checkbox in self.column_checkboxes.items() if checkbox.isChecked()]
@@ -31,7 +32,7 @@ class DataFrameTableModel(QAbstractTableModel):
     def data(self, index, role=Qt.DisplayRole):
         if role == Qt.DisplayRole:
             column_name = self.visible_columns[index.column()]
-            return str(self.dataframe.iloc[index.row()][column_name])
+            return str(self._dataframe.iloc[index.row()][column_name])
         if role == Qt.BackgroundRole:
             if index in self.highlighted_cells:
                 return QColor("yellow")
@@ -49,12 +50,15 @@ class DataFrameTableModel(QAbstractTableModel):
         return None
 
 
+    def flags(self, index):
+        return Qt.ItemIsEnabled | Qt.ItemIsSelectable
+    
     """
     Update the visible rows counter to load the next amount of rows
     """
     def update_visible_rows(self):
         self.visible_rows += 100
-        self.visible_rows = min(self.visible_rows, len(self.dataframe))
+        self.visible_rows = min(self.visible_rows, len(self._dataframe))
         return self.visible_rows
 
 
@@ -62,14 +66,14 @@ class DataFrameTableModel(QAbstractTableModel):
     Update the next 100 visible rows
     """
     def canFetchMore(self, index):
-        return self.visible_rows < len(self.dataframe)
+        return self.visible_rows < len(self._dataframe)
 
 
     """
     This fetches the next 100 rows that need to be loaded in
     """
     def fetchMore(self, index):
-        remaining_rows = len(self.dataframe) - self.visible_rows
+        remaining_rows = len(self._dataframe) - self.visible_rows
         rows_to_fetch = min(100, remaining_rows)
         self.beginInsertRows(index, self.visible_rows, self.visible_rows + rows_to_fetch - 1)
         self.visible_rows += rows_to_fetch
@@ -81,15 +85,15 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     def get_dataframe(self):
         visible_columns = [col for col, checkbox in self.column_checkboxes.items() if checkbox.isChecked()]
-        return pd.DataFrame(self.dataframe[visible_columns])
+        return pd.DataFrame(self._dataframe[visible_columns])
 
 
     """
     Get the column name of specific selected column
     """
     def getColumnName(self, columnIndex):
-        if 0 <= columnIndex < len(self.dataframe.columns):
-            return str(self.dataframe.columns[columnIndex])
+        if 0 <= columnIndex < len(self._dataframe.columns):
+            return str(self._dataframe.columns[columnIndex])
         return None
 
 
@@ -100,12 +104,23 @@ class DataFrameTableModel(QAbstractTableModel):
         self.highlighted_cells = []
         if self.text:
             for row , col in product(range(self.visible_rows), range(self.columnCount())):
-                item = str(self.dataframe.iat[row, col])
+                item = str(self._dataframe.iat[row, col])
                 if self.text and self.text in item:
                     self.highlighted_cells.append(self.index(row, col))
         self.layoutChanged.emit()
+        return
 
 
+    def setData(self, index, value, role=Qt.EditRole):
+        if role == Qt.CheckStateRole:
+            if index.isValid():
+                if index in self._selected_indexes:
+                    self._selected_indexes.remove(index)
+                else:
+                    self._selected_indexes.add(index)
+                self.dataChanged.emit(index, index, [role])
+                return True
+        return False
 
 """
 Setup the expandable text checkboxes and setup their individual tables that are loaded in
@@ -229,7 +244,8 @@ class ExpandableText(QWidget):
                 # Apply new model
                 table = QTableView()
                 table.setModel(model)
-                table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+                table.setSelectionBehavior(QTableView.SelectItems)
+                self.tab_widget.currentChanged.connect(self.on_tab_changed)
 
                 # Make tab for loaded data - save model
                 self.model_dict[table] = model
@@ -246,14 +262,11 @@ class ExpandableText(QWidget):
                         self.table_split.widget(1).addTab(table, self.csv_name)
                 
                 # Allow for batch scrolling to work for any of the tables
-                for i, j in self.model_dict.items():
-                    i.verticalScrollBar().valueChanged.connect(self.load_more_data)
-                    self.check_status(j)
+                table.verticalScrollBar().valueChanged.connect(self.load_more_data)
 
             # Enable multi-selection for tables
             for tab_name, table_widget in self.table_dict.items():
-                    selection_model = table_widget.selectionModel()
-                    selection_model.selectionChanged.connect(self.handle_selection_changed)
+                table_widget.selectionModel().selectionChanged.connect(self.update_view)
         else:
             print(f"{tab_name} is empty! Table unable to load!")
 
@@ -267,39 +280,28 @@ class ExpandableText(QWidget):
 
 
     """
-    Create a dictionary for what the user selects in the table of interest
+    Get the data for the user to select and save to CSV
     """
-    def handle_selection_changed(self):
+    def update_view(self, selected, deselected):
+        self.selected_data = {}
+        for tab_name, table_widget in self.table_dict.items():
+            model = self.model_dict[table_widget] 
+            for index in table_widget.selectionModel().selectedIndexes():
+                row = index.row()
+                col = index.column()
+                header = model.headerData(col, Qt.Horizontal)
+                self.selected_data[header] = self.selected_data.get(header, []) + [model._dataframe.iloc[row, col]]
 
-        #TODO: Need to get user selections working
-        current_index = self.tab_widget.currentIndex()
-        current_tab_name = self.tab_widget.tabText(current_index)
-        table = self.table_dict[current_tab_name]
-        model = self.model_dict[table]
+        selected_data = pd.DataFrame(self.selected_data)
+        print("Real-Time Selected Data:\n", selected_data)
 
-        # # Get the index selection values
-        # selected_indexes = table.selectionModel().selectedIndexes()
-        # for index in selected_indexes:
-        #     row = index.row()
-        #     col = index.column()
-        #     columnName = model.getColumnName(col)
-        #     index = model.index(row, col)
 
-        # # Setup Data
-        # if index:
-        #     value = model.data(index)
-
-        #     if columnName in self.epic:
-        #         self.epic[columnName].append(value)
-        #     else:
-        #         self.epic[columnName] = [value]
-
-        #     # dataframe = pd.DataFrame(self.epic)
-        #     print(f"{self.epic = }")
-
-        #     # # selected_data = model.selected_data
-        #     # selected_dataframe = pd.DataFrame(self.epic)
-        #     # print(selected_dataframe)
+    """
+    Clear Selection when user changes tabs
+    """
+    def on_tab_changed(self):
+        for tab_name, table_widget in self.table_dict.items():
+            table_widget.selectionModel().clear()
 
 
 """

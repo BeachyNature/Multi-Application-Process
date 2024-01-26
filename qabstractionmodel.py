@@ -215,22 +215,22 @@ class ExpandableText(QWidget):
     """
     Tells the model to load the next 100 rows
     """
-    def load_more_data(self):
-        tab = self.table_dict[self.csv_name]
+    def load_more_data(self, widget, value):
+        for i, j in self.model_dict.items():
+            current_value = i.verticalScrollBar().value()
+            max_value = i.verticalScrollBar().maximum()
 
-        model = tab.model()
+            def is_within_range(value1, value2, range_limit=20):
+                return abs(value1 - value2) <= range_limit
         
-        current_value = tab.verticalScrollBar().value()
-        max_value = tab.verticalScrollBar().maximum()
+            if is_within_range(current_value, max_value):
+                if len(self.dataframe) > 100:
+                    self.scroll_table_to_row(j)
 
-        def is_within_range(value1, value2, range_limit=20):
-            return abs(value1 - value2) <= range_limit
 
-        # Checks if the scroll value is within the maximum value
-        if is_within_range(current_value, max_value):
-            if len(self.dataframe) > 100:
-                model.update_visible_rows()
-                model.update_search_text()
+    def scroll_table_to_row(self, table):
+        table.update_visible_rows()
+        table.update_search_text()
 
 
 
@@ -263,15 +263,14 @@ class ExpandableText(QWidget):
                     else:
                         # Subsequent double-taps: add the new tab widget to the initially split tab widget
                         self.table_split.widget(1).addTab(table, self.csv_name)
-                
-                # Allow for batch scrolling to work for any of the tables
-                table.verticalScrollBar().valueChanged.connect(self.load_more_data)
+
+                # Signal Callers
+                # table.verticalScrollBar().valueChanged.connect(self.load_more_data)
                 table.selectionModel().selectionChanged.connect(self.update_view)
+                vertical_scrollbar = table.verticalScrollBar()
+                vertical_scrollbar.valueChanged.connect(lambda value, table=table: self.load_more_data(table, value))
                 self.check_status(model)
 
-            # # Enable multi-selection for tables
-            # for tab_name, table_widget in self.table_dict.items():
-            #     table_widget.selectionModel().selectionChanged.connect(self.update_view)
         else:
             print(f"{tab_name} is empty! Table unable to load!")
 
@@ -291,7 +290,7 @@ class ExpandableText(QWidget):
         selected_data = {}
 
         for tab_name, table_widget in self.table_dict.items():
-            model = self.model_dict[table_widget] 
+            model = self.model_dict[table_widget]
             for index in table_widget.selectionModel().selectedIndexes():
                 row = index.row()
                 col = index.column()
@@ -455,36 +454,6 @@ class DataFrameViewer(QWidget):
         if self.tab_widget.count() > 1:
             self.table_split.widget(1).setParent(None)
 
-
-    """
-    User can save a csv based on what they have selected in a table
-    """
-    def save_csv(self):
-    
-        # selected_data = []
-        # for index in self.model._selected_indexes:
-        #     row = index.row()
-        #     selected_data.append(self.model._data[row])
-        # selected_data = pd.DataFrame(selected_data, columns=self.model._header)
-
-        nice = ExpandableText.get_selected_items(ExpandableText)
-        print(f"{nice = }")
-        # df.to_csv(file_name, encoding='utf-8', index=False)
-
-
-        # Save to CSV
-        # file_dialog = QFileDialog()
-        # file_dialog.setAcceptMode(QFileDialog.AcceptSave)
-        # file_path, _ = file_dialog.getSaveFileName(self, "Save Selected Data", "", "CSV Files (*.csv)")
-        # if file_path:
-        #     selected_data.to_csv(file_path, index=False)
-        #     print("Selected Data saved to:", file_path)
-        # print("Saved CSV!")
-        # pass
-
-        # nice = ExpandableText.handle_selection_changed(ExpandableText)
-        # print(nice)
-        # df.to_csv(file_name, encoding='utf-8', index=False)
 
     """
     User can type a string here and search all the loaded tables to highlight them

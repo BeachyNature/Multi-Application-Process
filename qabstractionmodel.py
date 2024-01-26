@@ -5,7 +5,7 @@ from PyQt5.QtGui import QColor
 from PyQt5.QtCore import Qt, QAbstractTableModel
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,\
                             QTableView, QCheckBox, QScrollArea, QTabWidget, QSplitter,\
-                            QAbstractItemView
+                            QAbstractItemView, QFileDialog
 
 
 """
@@ -126,9 +126,9 @@ class DataFrameTableModel(QAbstractTableModel):
 Setup the expandable text checkboxes and setup their individual tables that are loaded in
 """
 class ExpandableText(QWidget):
-    def __init__(self, dataframe, csv_name, tab_widget, index, splitter, model_dict, all_table, table_dict):
+    def __init__(self, dataframe, csv_name, tab_widget, index, splitter, model_dict, all_table, table_dict, csv_button):
         super().__init__()
-        self.epic = {}
+        self.saved_data = None
         self.is_expanded = False
         self.first_split = False
         self.dataframe = dataframe
@@ -139,9 +139,11 @@ class ExpandableText(QWidget):
         self.index = index
         self.all_table = all_table
         self.table_dict = table_dict
+        self.csv_button = csv_button
 
-        # Load the checkbox items
+        # Load the checkbox items and connect save csv button
         self.column_checkboxes = self.create_column_checkboxes()
+        self.csv_button.clicked.connect(self.save_csv)
 
         # If the table is for inital setup or comparison load in
         if isinstance(self.index, int):
@@ -161,6 +163,7 @@ class ExpandableText(QWidget):
         # Button setups and styles
         self.check_button = QPushButton(self.csv_name + " +")
         self.check_button.clicked.connect(self.toggle_expansion)
+
         if not self.dataframe.empty:
             self.check_button.setStyleSheet('border: none; color: black; font-size: 24px;')
         else:
@@ -283,17 +286,18 @@ class ExpandableText(QWidget):
     Get the data for the user to select and save to CSV
     """
     def update_view(self, selected, deselected):
-        self.selected_data = {}
+        selected_data = {}
+
         for tab_name, table_widget in self.table_dict.items():
             model = self.model_dict[table_widget] 
             for index in table_widget.selectionModel().selectedIndexes():
                 row = index.row()
                 col = index.column()
                 header = model.headerData(col, Qt.Horizontal)
-                self.selected_data[header] = self.selected_data.get(header, []) + [model._dataframe.iloc[row, col]]
+                selected_data[header] = selected_data.get(header, []) + [model._dataframe.iloc[row, col]]
 
-        selected_data = pd.DataFrame(self.selected_data)
-        print("Real-Time Selected Data:\n", selected_data)
+        # Save data to dataframe
+        self.saved_data = pd.DataFrame(selected_data)
 
 
     """
@@ -303,6 +307,19 @@ class ExpandableText(QWidget):
         for tab_name, table_widget in self.table_dict.items():
             table_widget.selectionModel().clear()
 
+
+    """
+    Save the selected data to a csv when pressed
+    """
+    def save_csv(self):
+        if self.saved_data is not None:
+            file_dialog = QFileDialog()
+            file_dialog.setAcceptMode(QFileDialog.AcceptSave)
+            file_path, _ = file_dialog.getSaveFileName(self, "Save Selected Data", "", "CSV Files (*.csv)")
+            if file_path:
+                self.saved_data.to_csv(file_path, index=False)
+                print("Selected Data saved to:", file_path)
+        return 
 
 """
 Main Viewing Window of the loaded dataframes
@@ -349,13 +366,12 @@ class DataFrameViewer(QWidget):
 
         # CSV Save Button
         self.csv_button = QPushButton("Save Data")
-        self.csv_button.clicked.connect(self.save_csv)
 
         # Run the data through the expanded text list
         for csv_name, df in self.data.items():
             text_widget = ExpandableText(df, csv_name, self.tab_widget, None,
                                          self.table_split, self.model_dict, self.all_table,
-                                         self.table_dict)
+                                         self.table_dict, self.csv_button)
             labels_layout.addWidget(text_widget)
 
         # Configure layouts
@@ -425,7 +441,7 @@ class DataFrameViewer(QWidget):
             if not dataframe.empty:
                 ExpandableText(dataframe, new_name, self.new_tab_widget,
                                index, self.table_split, self.model_dict,
-                               self.all_table, self.table_dict)
+                               self.all_table, self.table_dict, self.csv_button)
             else:
                 print("Cannot Compare, dataframe is empty!")
     
@@ -444,8 +460,27 @@ class DataFrameViewer(QWidget):
     User can save a csv based on what they have selected in a table
     """
     def save_csv(self):
-        print("Saved CSV!")
-        pass
+    
+        # selected_data = []
+        # for index in self.model._selected_indexes:
+        #     row = index.row()
+        #     selected_data.append(self.model._data[row])
+        # selected_data = pd.DataFrame(selected_data, columns=self.model._header)
+
+        nice = ExpandableText.get_selected_items(ExpandableText)
+        print(f"{nice = }")
+        # df.to_csv(file_name, encoding='utf-8', index=False)
+
+
+        # Save to CSV
+        # file_dialog = QFileDialog()
+        # file_dialog.setAcceptMode(QFileDialog.AcceptSave)
+        # file_path, _ = file_dialog.getSaveFileName(self, "Save Selected Data", "", "CSV Files (*.csv)")
+        # if file_path:
+        #     selected_data.to_csv(file_path, index=False)
+        #     print("Selected Data saved to:", file_path)
+        # print("Saved CSV!")
+        # pass
 
         # nice = ExpandableText.handle_selection_changed(ExpandableText)
         # print(nice)

@@ -33,17 +33,24 @@ class DataFrameTableModel(QAbstractTableModel):
     Makes columns visible or not
     """
     def update_visible_columns(self):
-        self.visible_columns = [col for col, checkbox in self.column_checkboxes.items() if checkbox.isChecked()]
-        self.layoutChanged.emit()
+        if self.column_checkboxes is not None:
+            self.visible_columns = [col for col, checkbox in self.column_checkboxes.items() if checkbox.isChecked()]
+            self.layoutChanged.emit()
 
 
     """
     Sets up the table from the dataframes
     """
     def data(self, index, role=Qt.DisplayRole):
+
         if role == Qt.DisplayRole:
-            column_name = self.visible_columns[index.column()]
-            return str(self._dataframe.iloc[index.row()][column_name])
+            if self.column_checkboxes is not None:
+                column_name = self.visible_columns[index.column()]
+                row_index = self._dataframe.index[index.row()]
+                return str(self._dataframe.loc[row_index, column_name])
+            else:
+                return str(self._dataframe.iloc[index.row(), index.column()])
+
         if role == Qt.BackgroundRole:
             if index in self.highlighted_cells:
                 return QColor("yellow")
@@ -53,15 +60,22 @@ class DataFrameTableModel(QAbstractTableModel):
     Column total from dataframe
     """
     def columnCount(self, parent=None):
-        return len(self.visible_columns)
-    
+        if self.column_checkboxes:
+            return len(self.visible_columns)
+        else:
+            return len(self._dataframe.columns)
+
     """
     Creates the headers for the table
     """
     def headerData(self, section, orientation, role=Qt.DisplayRole):
         if role == Qt.DisplayRole:
             if orientation == Qt.Horizontal:
-                return str(self.visible_columns[section])
+                if self.column_checkboxes:
+                    return str(self.visible_columns[section])
+                else:
+                    return str(self._dataframe.columns[section])
+    
             elif orientation == Qt.Vertical:
                 return str(section + 1)
         return None
@@ -248,7 +262,6 @@ class ExpandableText(QWidget):
                     self.model_dict[table].update_visible_rows()
                     self.model_dict[table].update_search_text()
 
-
     """
     Setup of the data in their respective tables and tabs
     """
@@ -263,7 +276,6 @@ class ExpandableText(QWidget):
                 table = QTableView()
                 table.setModel(model)
                 table.setSelectionBehavior(QTableView.SelectItems)
-                self.tab_widget.currentChanged.connect(self.on_tab_changed)
 
                 # Make tab for loaded data - save model
                 self.model_dict[table] = model
@@ -280,7 +292,7 @@ class ExpandableText(QWidget):
                         self.table_split.widget(1).addTab(table, self.csv_name)
 
                 # Signal Callers
-                # table.verticalScrollBar().valueChanged.connect(self.load_more_data)
+                self.tab_widget.currentChanged.connect(self.on_tab_changed)
                 table.selectionModel().selectionChanged.connect(self.update_view)
                 vertical_scrollbar = table.verticalScrollBar()
                 vertical_scrollbar.valueChanged.connect(lambda value, table=table: self.load_more_data(table, value))
@@ -344,6 +356,7 @@ class DataFrameViewer(QWidget):
         self.incr = 0
         self.data = data
         self._bool = False
+        self.test = False
         self.init_ui()
 
 
@@ -376,10 +389,14 @@ class DataFrameViewer(QWidget):
         search_bar = QLineEdit()
         search_bar.returnPressed.connect(self.search_tables)
         search_bar.setPlaceholderText("Search...")
+        self.search_text = search_bar.text()
         self.all_table = QCheckBox("Search All Tables")
 
-        # CSV Save Button
+        # Buttons
         self.csv_button = QPushButton("Save Data")
+        self.load_search_results_button = QPushButton("Load Search Results")
+        self.load_search_results_button.clicked.connect(self.load_search_results)
+        self.main_layout.addWidget(self.load_search_results_button)
 
         # Run the data through the expanded text list
         for csv_name, df in self.data.items():
@@ -474,14 +491,14 @@ class DataFrameViewer(QWidget):
     User can type a string here and search all the loaded tables to highlight them
     """
     def search_tables(self):
-        text = self.sender().text()
+        self.search_text = self.sender().text()
 
         def run_search(tab):
             for i in range(len(tab)):
                 index_table = tab.widget(i)
                 if isinstance(index_table, QTableView):
                     model = index_table.model()
-                    model.text = text
+                    model.text = self.search_text
                     model.update_search_text()
 
         # Run through all the tabs if they exist
@@ -492,3 +509,67 @@ class DataFrameViewer(QWidget):
         if self._bool and self.all_table.isChecked():
             value = self.new_tab_widget
             run_search(value)
+
+
+    def load_search_results(self):
+        # Get the current dataframe from the active tab
+        current_index = self.tab_widget.currentIndex()
+        if current_index != -1:
+            self.current_table = self.tab_widget.widget(current_index)
+            if isinstance(self.current_table, QTableView):
+                model = self.current_table.model()
+                if model:
+                    
+                    # Setup window
+                    self.central_widget = QWidget()
+                    self.find_items_layout = QVBoxLayout(self.central_widget)
+                    
+                    # Definied dataframe
+                    df = model.get_dataframe()
+                    
+                    # Use applymap with vectorized string methods to search for the text in each cell
+                    search_result = df[df.apply(lambda col: col.map(lambda x: str(x).lower().find(self.search_text.lower()) != -1))]
+
+                    # Get all non-NaN values and create a new DataFrame with original indices and a column indicating where the item is found
+                    non_nan_series = search_result.stack().dropna()
+                    non_nan_df = pd.DataFrame({'value': non_nan_series.values, 'search_index': non_nan_series.index.get_level_values(0), 'column': non_nan_series.index.get_level_values(1)})
+
+
+                    # Group by the index and create a list of values for each group
+                    grouped_df = non_nan_df.groupby('search_index').agg({'value': list, 'column': 'first'}).reset_index()
+                    
+                    # Create a new QAbstractTableModel for search results
+                    self.search_results_model = DataFrameTableModel(grouped_df, None)
+                    self.search_results_table = QTableView()
+                    self.search_results_table.setModel(self.search_results_model)
+
+                    # Hide the vertical header (index column)
+                    self.search_results_table.verticalHeader().setVisible(False)
+
+                    # Add to layout
+                    self.find_items_layout.addWidget(self.search_results_table)
+
+                    # Signal Callers
+                    self.search_results_table.setSelectionBehavior(QTableView.SelectRows)
+                    self.search_results_table.selectionModel().selectionChanged.connect(self.on_clicked)
+
+                    # Add a new tab for the search results
+                    # search_results_tab_name = "Search Results"
+                    # self.tab_widget.addTab(search_results_table, search_results_tab_name)
+                    # self.tab_widget.setCurrentIndex(self.tab_widget.indexOf(search_results_table))
+        
+        # Load the find items window
+        self.central_widget.show()
+    
+    """
+    Index to the right highlighted value when clicked
+    """
+    def on_clicked(self, selected, deselected):
+        for index in selected.indexes():
+            # Use the index to get the data
+            if index.column() == 0:
+                data_at_index = self.search_results_model.data(index, Qt.DisplayRole)
+    
+        curr_index = self.current_table.model().index(int(data_at_index), 0)
+        self.current_table.scrollTo(curr_index, QTableView.PositionAtTop)
+        # return self.model().data(self.model().index(row, col), Qt.DisplayRole)

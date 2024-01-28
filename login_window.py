@@ -21,6 +21,7 @@ class LoginWindow(QWidget):
         # Setup user path
         user_path = os.path.expanduser("~")
         self.folder_path = os.path.join(user_path, "MAPS-Python")
+        self.plot_folder = os.path.join(self.folder_path, "Saved Plots")
         self.file_path = os.path.join(self.folder_path,'user.json')
 
         self.init_ui()
@@ -104,11 +105,14 @@ class LoginWindow(QWidget):
 
         if _bool: # Check if the user is registering or not
             if not os.path.exists(self.folder_path):
-                # If the folder doesn't exist, create it
                 os.makedirs(self.folder_path)
-                print(f"Folder MAPS-Python created successfully at: {self.folder_path}")
+
+                if not os.path.exists(self.plot_folder):
+                    os.makedirs(self.plot_folder)
+
+                print(f"Folders in MAPS-Python created successfully at: {self.folder_path}")
             else:
-                print(f"Folder MAPS-Python already exists at: {self.folder_path}")
+                print(f"Folders in MAPS-Python already exists at: {self.folder_path}")
 
         with open(self.file_path, 'w') as file:
             json.dump(user_info, file, indent=2)

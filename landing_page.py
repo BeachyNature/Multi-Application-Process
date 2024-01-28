@@ -4,7 +4,7 @@ import login_window
 import animated_lineplot
 import three_d_plot
 import multiple_csv
-import multiple_plots
+import pkl_selector
 import video_replay
 
 
@@ -36,10 +36,10 @@ class MainWindow(QMainWindow):
         self.check_names = {'CSV Loader': multiple_csv.FileDialog,
                             '3D Plotter': three_d_plot.ThreeDPlot,
                             '2D Plotter': animated_lineplot.MainWindow,
-                            'Multi-Plotter': multiple_plots.StaticPlots,
+                            'Multi-Plotter': pkl_selector.PlotMenu,
                             'Video Replayer': video_replay.VideoSelector,
-                            'Plot Configure': None,
-                            'Static Plot': None}
+                            'Plot Configure': False,
+                            'Static Plot': False}
         
         self.layout.addWidget(self.user_setting_btn)
         self.layout.addWidget(self.launch_btn)

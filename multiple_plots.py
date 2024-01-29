@@ -2,6 +2,7 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout, QWidget
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.widgets import CheckButtons
 import matplotlib.pyplot as plt
+from datetime import datetime
 from matplotlib import gridspec
 import numpy as np
 import pickle
@@ -15,22 +16,24 @@ class StaticPlots(QWidget):
     def __init__(self, pkl_file):
         super().__init__()
 
-        print(pkl_file)
         self.row = 0
 
         # User file data
         data = landing_page.update_file()
+        current_time = datetime.now()
+        time_string = current_time.strftime("%H.%M.%S")
 
         user_path = os.path.expanduser("~")
         folder_path = os.path.join(user_path, "MAPS-Python/Saved Plots")
-        file_path = os.path.join(folder_path,'saved_figure.pkl')
+        file_path = os.path.join(folder_path, f'{time_string} Plot.pkl')
+        select_path = os.path.join(folder_path, pkl_file)
 
         # Initialize lines_by_label here
         self.lines_by_label = {}
 
         if pkl_file:
             # Load the figure back up
-            with open(file_path, 'rb') as f:
+            with open(select_path, 'rb') as f:
                 self.fig = pickle.load(f)
 
             # Extract lines from the loaded figure
@@ -87,7 +90,11 @@ class StaticPlots(QWidget):
                 self.plot_bottom().plot(t, s4, lw=2, color='red', label='2 Hz')
                 self.plot_bottom().plot(t, s5, lw=2, color='green', label='3 Hz')
                 self.plot_bottom().plot(t, s3, lw=2, color='blue', label='4 Hz')
-
+            
+            # Save the run file
+            with open(file_path, 'wb') as f:
+                pickle.dump(self.fig, f)
+    
         # Setup window
         self.canvas = FigureCanvas(self.fig)
         self.layout = QVBoxLayout()
@@ -119,72 +126,3 @@ class StaticPlots(QWidget):
         # Add new subplot
         new_ax = self.fig.add_subplot(gs[self.row-1])
         return new_ax
-
-
-# import matplotlib.pyplot as plt
-# from matplotlib.widgets import CheckButtons
-# import pickle
-
-# user_path = os.path.expanduser("~")
-# folder_path = os.path.join(user_path, "MAPS-Python/Saved Plots")
-# file_path = os.path.join(folder_path,'saved_figure.pkl')
-
-# def toggle_visibility(label, lines):
-#     index = labels.index(label)
-#     lines[index].set_visible(not lines[index].get_visible())
-#     plt.draw()
-
-# # Create a single figure with multiple subplots
-# fig, axs = plt.subplots(3, 1, figsize=(8, 12))
-
-# # Data for the first subplot
-# axs[0].plot([1, 2, 3, 4], [10, 20, 25, 30], label='Line 1')
-# axs[0].plot([1, 2, 3, 4], [15, 25, 30, 35], label='Line 2')
-
-# # Data for the second subplot
-# axs[1].plot([1, 2, 3, 4], [30, 25, 20, 15], label='Line 3')
-# axs[1].plot([1, 2, 3, 4], [10, 15, 20, 25], label='Line 4')
-
-# # Data for the third subplot
-# axs[2].plot([1, 2, 3, 4], [5, 10, 15, 20], label='Line 5')
-# axs[2].plot([1, 2, 3, 4], [25, 20, 15, 10], label='Line 6')
-
-# # Add checkbuttons to toggle visibility of lines in the first subplot
-# lines = axs[0].get_lines()
-# labels = [str(line.get_label()) for line in lines]
-# check_buttons = CheckButtons(axs[0], labels, [line.get_visible() for line in lines])
-# check_buttons.on_clicked(lambda label: toggle_visibility(label, lines))
-
-# # Save the entire figure
-# with open(file_path, 'wb') as f:
-#     pickle.dump(fig, f)
-
-# plt.show()
-
-# import matplotlib.pyplot as plt
-# from matplotlib.widgets import CheckButtons
-# import pickle
-
-# def toggle_visibility(label, lines):
-#     index = loaded_labels.index(label)
-#     lines[index].set_visible(not lines[index].get_visible())
-#     loaded_fig.canvas.draw()
-
-# # Load the figure back up
-# with open(file_path, 'rb') as f:
-#     loaded_fig = pickle.load(f)
-
-# # Extract lines from the loaded figure
-# loaded_lines = [line for ax in loaded_fig.axes for line in ax.get_lines()]
-
-# # Extract labels for the first subplot
-# ax1_lines = loaded_fig.axes[0].get_lines()
-# loaded_labels = [str(line.get_label()) for line in ax1_lines]
-
-# # Create checkbuttons for the loaded figure (only for the first subplot)
-# check_buttons = CheckButtons(loaded_fig.axes[0], loaded_labels, [line.get_visible() for line in ax1_lines])
-# check_buttons.on_clicked(lambda label: toggle_visibility(label, ax1_lines))
-
-# # Display the loaded figure
-# plt.show()
-

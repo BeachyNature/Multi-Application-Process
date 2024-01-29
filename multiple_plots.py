@@ -13,7 +13,7 @@ import os
 This loads basoc plots that the user can load
 """
 class StaticPlots(QWidget):
-    def __init__(self, pkl_file):
+    def __init__(self, pkl_file, folder_path):
         super().__init__()
 
         self.row = 0
@@ -23,8 +23,7 @@ class StaticPlots(QWidget):
         current_time = datetime.now()
         time_string = current_time.strftime("%H.%M.%S")
 
-        user_path = os.path.expanduser("~")
-        folder_path = os.path.join(user_path, "MAPS-Python/Saved Plots")
+        # Setup File Path
         file_path = os.path.join(folder_path, f'{time_string} Plot.pkl')
         select_path = os.path.join(folder_path, pkl_file)
 

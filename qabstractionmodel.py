@@ -1,11 +1,12 @@
 import os
+import re
 import pandas as pd
 from itertools import product
 from PyQt5.QtGui import QColor, QDropEvent, QDragEnterEvent
 from PyQt5.QtCore import Qt, QAbstractTableModel
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,\
                             QTableView, QCheckBox, QScrollArea, QTabWidget, QSplitter,\
-                            QSizePolicy, QFileDialog
+                            QFileDialog
 
 
 """
@@ -14,20 +15,24 @@ Created QAbstractionTableModel that each dataframe loaded in utilizes
 class DataFrameTableModel(QAbstractTableModel):
     def __init__(self, dataframe, column_checkboxes, parent=None):
         super(DataFrameTableModel, self).__init__(parent)
-        self.highlighted_cells = []
-        self._dataframe = dataframe
         self.column_checkboxes = column_checkboxes
+        self.highlighted_cells = []
+        self._selected_indexes = set()
+        self._dataframe = dataframe
         self.visible_rows = 100
         self.text = None
-        self._selected_indexes = set()
+        self._bool = False
+        
+        # Set the visible row count
         self.update_visible_columns()
-
-
     """
     Row counter that factors in batch size loading
     """
     def rowCount(self, parent=None):
-        return min(self.visible_rows, len(self._dataframe))
+        if self._bool:
+            return min(self.visible_rows, len(self.highlighted_cells))
+        elif not self._bool:
+            return min(self.visible_rows, len(self._dataframe))
 
 
     """
@@ -55,6 +60,8 @@ class DataFrameTableModel(QAbstractTableModel):
         if role == Qt.BackgroundRole:
             if index in self.highlighted_cells:
                 return QColor("yellow")
+        
+        self.layoutChanged.emit()
         return None
 
 
@@ -136,23 +143,41 @@ class DataFrameTableModel(QAbstractTableModel):
 
 
     """
+    Uncheck all the columns that are not being filtered    
+    """
+    def uncheck_all_other_columns(self, col_name):
+        for name, checkbox in self.column_checkboxes.items():
+            if name != col_name:
+                checkbox.setChecked(False)
+
+    
+    """
     Gets highlights the found text in the desired tables
     """
     def update_search_text(self):
         self.highlighted_cells = []
+        cond = ['>', '<', '!=']
         if self.text:
-            if ">" in self.text: # Conditional search
-                print("> conditional")
-            elif "<" in self.text:
-                print("< conditional")
-            elif "!=" in self.text:
-                print("!= conditional")
+            pattern = '|'.join(map(re.escape, ['>', '<', '!=']))
+            parts = re.split(pattern, self.text, 1)
             
-            for row , col in product(range(self.visible_rows), range(self.columnCount())):
-                item = str(self._dataframe.iat[row, col])
+            for row, col in product(range(self.visible_rows), range(self.columnCount())):
+                if len(parts) > 1:
+                    col_num = self._dataframe.columns.get_loc(parts[0])
+                    item = str(self._dataframe.iat[row, col_num])
+
+                    if any(eval(f"{item} {op} {parts[1]}") for op in cond if op in self.text):
+                        self.highlighted_cells.append(self.index(row, col))
+                        self._bool = True
+    
+                    self.uncheck_all_other_columns(parts[0])
+                else:
+                    print("Normal run")
+                    item = str(self._dataframe.iat[row, col])
+
                 if self.text and self.text in item:
                     self.highlighted_cells.append(self.index(row, col))
-        self.layoutChanged.emit()
+            self.layoutChanged.emit()
         return
 
 
@@ -277,8 +302,6 @@ class ExpandableText(QWidget):
                 existing_vertical_layout.addWidget(new_instance)
 
         event.acceptProposedAction()
-
-
 
 
     """

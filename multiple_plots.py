@@ -35,6 +35,12 @@ class StaticPlots(QWidget):
             with open(select_path, 'rb') as f:
                 self.fig = pickle.load(f)
 
+            # Remove existing checkbuttons from the loaded figure
+            for ax in self.fig.axes:
+                for artist in ax.get_children():
+                    if isinstance(artist, CheckButtons):
+                        artist.remove()
+
             # Extract lines from the loaded figure
             loaded_lines = [line for ax in self.fig.axes for line in ax.get_lines()]
 
@@ -45,9 +51,25 @@ class StaticPlots(QWidget):
             # Create checkbuttons for the loaded figure (only for the first subplot)
             self.check_buttons = CheckButtons(self.fig.axes[0], loaded_labels, [line.get_visible() for line in ax1_lines])
             self.check_buttons.on_clicked(self.callback)
-            
-            # Update lines_by_label for loaded figure
+
+            # Update lines_by_label for the loaded figure
             self.lines_by_label = {label: line for label, line in zip(loaded_labels, loaded_lines)}
+
+            # Explicitly set the position of the checkbuttons
+            self.rax = self.ax.inset_axes([0.0, 0.0, 0.12, 0.2])
+            line_colors = [l.get_color() for l in self.lines_by_label.values()]
+            self.check = CheckButtons(
+                ax=self.rax,
+                labels=self.lines_by_label.keys(),
+                actives=[l.get_visible() for l in self.lines_by_label.values()],
+                frame_props={'edgecolor': line_colors},
+                check_props={'facecolor': line_colors},
+            )
+            self.check.on_clicked(self.callback)
+            self.check.on_clicked(self.callback)
+            
+            # Draw the canvas after adjusting the checkbuttons position
+            self.fig.canvas.draw_idle()
 
         else:
             self.fig = plt.figure()

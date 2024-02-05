@@ -1,10 +1,11 @@
+import os
 import pandas as pd
 from itertools import product
-from PyQt5.QtGui import QColor
+from PyQt5.QtGui import QColor, QDropEvent, QDragEnterEvent
 from PyQt5.QtCore import Qt, QAbstractTableModel
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,\
                             QTableView, QCheckBox, QScrollArea, QTabWidget, QSplitter,\
-                            QFileDialog
+                            QSizePolicy, QFileDialog
 
 
 """
@@ -56,6 +57,7 @@ class DataFrameTableModel(QAbstractTableModel):
                 return QColor("yellow")
         return None
 
+
     """
     Column total from dataframe
     """
@@ -64,6 +66,7 @@ class DataFrameTableModel(QAbstractTableModel):
             return len(self.visible_columns)
         else:
             return len(self._dataframe.columns)
+
 
     """
     Creates the headers for the table
@@ -80,12 +83,14 @@ class DataFrameTableModel(QAbstractTableModel):
                 return str(section + 1)
         return None
 
+
     """
     Sets a flag for selectable items
     """
     def flags(self, index):
         return Qt.ItemIsEnabled | Qt.ItemIsSelectable
-    
+
+
     """
     Update the visible rows counter to load the next amount of rows
     """
@@ -136,6 +141,13 @@ class DataFrameTableModel(QAbstractTableModel):
     def update_search_text(self):
         self.highlighted_cells = []
         if self.text:
+            if ">" in self.text: # Conditional search
+                print("> conditional")
+            elif "<" in self.text:
+                print("< conditional")
+            elif "!=" in self.text:
+                print("!= conditional")
+            
             for row , col in product(range(self.visible_rows), range(self.columnCount())):
                 item = str(self._dataframe.iat[row, col])
                 if self.text and self.text in item:
@@ -173,13 +185,15 @@ class ExpandableText(QWidget):
         self.tab_widget = tab_widget
         self.table_split = splitter
         self.model_dict = model_dict
-        self.index = index
         self.table_dict = table_dict
+        self.csv_button = csv_button
+        self.index = index
+        self.setAcceptDrops(True)
 
-        # Load the checkbox items and connect save csv button
+        # Setup save CSV button in ExpandedTextView
+        self.csv_button.clicked.connect(self.save_csv)
         self.column_checkboxes = self.create_column_checkboxes()
-        csv_button.clicked.connect(self.save_csv)
-
+    
         # If the table is for inital setup or comparison load in
         if isinstance(self.index, int):
             self.setup_data()
@@ -191,7 +205,6 @@ class ExpandableText(QWidget):
     Setup each table and tab for the loaded dataframes
     """
     def init_ui(self):
-
         layout = QHBoxLayout()
         button_layout = QVBoxLayout()
 
@@ -209,12 +222,63 @@ class ExpandableText(QWidget):
         options_layout = QVBoxLayout(self.options_widget)
         for checkbox in self.column_checkboxes.values():
             options_layout.addWidget(checkbox)
+            options_layout.update()
 
         button_layout.addWidget(self.check_button, alignment=Qt.AlignTop)
         button_layout.addWidget(self.options_widget)
-        layout.addLayout(button_layout)
+        button_layout.update()
+
+        layout.addLayout(button_layout)  # Use the QVBoxLayout here
         layout.addStretch()
+        layout.update()
         self.setLayout(layout)
+
+
+    """
+    Enable drag and drop event for CSV
+    """
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        mime_data = event.mimeData()
+        if mime_data.hasUrls():
+            if all(url.toLocalFile().lower().endswith('.csv') for url in mime_data.urls()):
+                event.acceptProposedAction()
+
+
+    """
+    Register the drop event and handle the new data 
+    """
+    def dropEvent(self, event: QDropEvent):
+        mime_data = event.mimeData()
+
+        # Retrieve the file URLs from the mime data
+        urls = mime_data.urls()
+
+        # Process each file URL
+        for url in urls:
+            file_path = url.toLocalFile()
+            drag_data = pd.read_csv(file_path)
+            csv_name = os.path.basename(file_path).rstrip('.csv')
+
+            # Create a new instance with the new data
+            new_instance = ExpandableText(drag_data, csv_name, self.tab_widget, None,
+                                        self.table_split, self.model_dict,
+                                        self.table_dict, self.csv_button)
+
+            # Find the existing vertical layout in the current layout
+            existing_vertical_layout = None
+            for i in range(self.layout().count()):
+                item = self.layout().itemAt(i)
+                if item and isinstance(item.layout(), QVBoxLayout):
+                    existing_vertical_layout = item.layout()
+                    break
+
+            # If there is an existing vertical layout, add the new instance to it
+            if existing_vertical_layout:
+                existing_vertical_layout.addWidget(new_instance)
+
+        event.acceptProposedAction()
+
+
 
 
     """
@@ -222,7 +286,6 @@ class ExpandableText(QWidget):
     """
     def create_column_checkboxes(self):
         column_checkboxes = {}
-    
         for column in self.dataframe.columns:
             checkbox = QCheckBox(column)
             checkbox.setChecked(True)
@@ -288,7 +351,6 @@ class ExpandableText(QWidget):
                         self.first_split = True
                         self.table_split.insertWidget(1, self.tab_widget)
                     else:
-                        # Subsequent double-taps: add the new tab widget to the initially split tab widget
                         self.table_split.widget(1).addTab(table, self.csv_name)
 
                 # Signal Callers
@@ -346,6 +408,7 @@ class ExpandableText(QWidget):
                     print("Selected Data saved to:", file_path)
                 print(f"{self.saved_data = }")
         return 
+
 
 """
 Main Viewing Window of the loaded dataframes
@@ -571,5 +634,6 @@ class DataFrameViewer(QWidget):
                 data_at_index = self.search_results_model.data(index, Qt.DisplayRole)
     
         curr_index = self.current_table.model().index(int(data_at_index), 0)
+        print(f"{curr_index = }")
         self.current_table.scrollTo(curr_index, QTableView.PositionAtTop)
-        # return self.model().data(self.model().index(row, col), Qt.DisplayRole)
+

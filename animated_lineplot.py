@@ -194,24 +194,38 @@ class MainWindow(QWidget):
         self.setLayout(main_layout)
         self.setGeometry(100, 100, 1600, 900)
 
+
+    """
+    Animation Toggler, pause, resume, restart
+    """
     def toggle_animation(self):
         if self.central_widget.animation_running:
             self.central_widget.animation_running = False
             self.start_button.setText('Resume')
             self.animation_timer.stop()
-        else:
+
+        elif self.slider.value() == self.slider.maximum():
+            self.central_widget.animation_running = True
+            self.start_button.setText("Pause")
+            self.animation_timer.start(100)
+            self.slider.setValue(0)
+
+        elif not self.central_widget.animation_running:
             self.central_widget.animation_running = True
             self.start_button.setText('Pause')
             self.animation_timer.start(100)
-
 
     def increment_slider(self):
         current_value = self.slider.value()
         if current_value < self.slider.maximum():
             self.slider.setValue(current_value + 1)
-        else:
-            self.animation_timer.stop()
+        elif current_value == self.slider.maximum():
             self.central_widget.animation_running = False
+            self.start_button.setText("Restart")
+            self.animation_timer.stop()
+        else:
+            self.central_widget.animation_running = False
+            self.animation_timer.stop()
 
     def slider_changed(self, value):
         frame = value

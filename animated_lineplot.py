@@ -163,10 +163,7 @@ class MainWindow(QWidget):
         self.central_widget = MatplotlibWidget(self)
 
         self.start_button = QPushButton('Start', self)
-        self.start_button.clicked.connect(self.start_animation)
-
-        self.stop_button = QPushButton('Stop', self)
-        self.stop_button.clicked.connect(self.stop_animation)
+        self.start_button.clicked.connect(self.toggle_animation)
 
         self.info_button = QPushButton('Show Info', self)
         self.info_button.clicked.connect(self.show_selected_info)
@@ -177,13 +174,16 @@ class MainWindow(QWidget):
         self.slider.setRange(0, 100)
         self.slider.valueChanged.connect(self.slider_changed)
 
+        self.animation_paused = False
+        self.animation_timer = QTimer(self)
+        self.animation_timer.timeout.connect(self.increment_slider)
+
         self.init_layout()
         self.worker_thread = None
 
     def init_layout(self):
         button_layout = QVBoxLayout()
         button_layout.addWidget(self.start_button)
-        button_layout.addWidget(self.stop_button)
         button_layout.addWidget(self.info_button)
 
         main_layout = QVBoxLayout()
@@ -194,24 +194,24 @@ class MainWindow(QWidget):
         self.setLayout(main_layout)
         self.setGeometry(100, 100, 1600, 900)
 
-    def start_animation(self):
-        if not self.central_widget.animation_running:
+    def toggle_animation(self):
+        if self.central_widget.animation_running:
+            self.central_widget.animation_running = False
+            self.start_button.setText('Resume')
+            self.animation_timer.stop()
+        else:
             self.central_widget.animation_running = True
-            self.slider_timer = QTimer(self)
-            self.slider_timer.timeout.connect(self.increment_slider)
-            self.slider_timer.start(100)
+            self.start_button.setText('Pause')
+            self.animation_timer.start(100)
+
 
     def increment_slider(self):
         current_value = self.slider.value()
         if current_value < self.slider.maximum():
             self.slider.setValue(current_value + 1)
         else:
-            self.slider_timer.stop()
+            self.animation_timer.stop()
             self.central_widget.animation_running = False
-
-    def stop_animation(self):
-        if self.central_widget.animation_running:
-            self.central_widget.stop_animation()
 
     def slider_changed(self, value):
         frame = value
@@ -257,6 +257,7 @@ class MainWindow(QWidget):
 
         # Launch the Window  to display selected indexes
         self.table_window.show()
+
 
 
 

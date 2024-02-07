@@ -1,5 +1,6 @@
 import os
 import re
+import operator
 import pandas as pd
 from itertools import product
 from PyQt5.QtGui import QColor, QDropEvent, QDragEnterEvent
@@ -147,8 +148,10 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     def uncheck_all_other_columns(self, col_name):
         for name, checkbox in self.column_checkboxes.items():
-            if name != col_name:
+            if name != col_name and self._bool:
                 checkbox.setChecked(False)
+            else:
+                checkbox.setChecked(True)
 
     
     """
@@ -156,28 +159,50 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     def update_search_text(self):
         self.highlighted_cells = []
-        cond = ['>', '<', '!=']
+        valid_operators = {
+            '>': operator.gt,
+            '<': operator.lt,
+            '!=': operator.ne,
+            '==': operator.eq
+        }
+
         if self.text:
-            pattern = '|'.join(map(re.escape, ['>', '<', '!=']))
+            pattern = '|'.join(map(re.escape, valid_operators.keys()))
             parts = re.split(pattern, self.text, 1)
-            
+
             for row, col in product(range(self.visible_rows), range(self.columnCount())):
                 if len(parts) > 1:
-                    col_num = self._dataframe.columns.get_loc(parts[0])
-                    item = str(self._dataframe.iat[row, col_num])
 
-                    if any(eval(f"{item} {op} {parts[1]}") for op in cond if op in self.text):
-                        self.highlighted_cells.append(self.index(row, col))
-                        self._bool = True
-    
-                    self.uncheck_all_other_columns(parts[0])
+                    val = parts[0].rstrip() # Remove spaces
+                    val1 = parts[1].lstrip()
+
+                    col_num = self._dataframe.columns.get_loc(val)
+
+                    if val1.isdigit():
+                        item = int(self._dataframe.iat[row, col_num])
+                        cond = int(val1)
+                    else:
+                        item = str(self._dataframe.iat[row, col_num])
+                        cond = str(val1)
+
+                    for op in valid_operators:
+                        if op in self.text:
+                            if valid_operators[op](item, cond):
+                                self.highlighted_cells.append(self.index(row, col))
+                                self._bool = True
+
+                    self.uncheck_all_other_columns(val) # Should be a checkbox option
+
                 else:
-                    print("Normal run")
                     item = str(self._dataframe.iat[row, col])
+                    if self.text and self.text in item:
+                        self.highlighted_cells.append(self.index(row, col))
 
-                if self.text and self.text in item:
-                    self.highlighted_cells.append(self.index(row, col))
-            self.layoutChanged.emit()
+        else:
+            self._bool = False
+            self.uncheck_all_other_columns(None)
+
+        self.layoutChanged.emit()
         return
 
 

@@ -51,7 +51,7 @@ class MatplotlibWidget(QWidget):
         # Set seed for reproducibility
         np.random.seed(42)
 
-        #SETUP
+        # SETUP
         num_points = 100
         x_values = np.arange(num_points)
         names = ['Alice', 'Bob', 'Charlie']
@@ -114,12 +114,16 @@ class MatplotlibWidget(QWidget):
     Select the items in the line plot
     """
     def selected_values(self):
+        # Clear previous highlights
+        for collection in self.ax.collections:
+            collection.remove()
+
         # Highlight selected points with a different marker or color
         if self.selected_points:
             for key, value in self.selected_points.items():
                 # Separating first and second values
                 x_value, y_value = zip(*value)
-    
+
                 self.ax.scatter(
                     x_value,
                     y_value,
@@ -178,9 +182,13 @@ class MainWindow(QWidget):
         self.animation_timer = QTimer(self)
         self.animation_timer.timeout.connect(self.increment_slider)
 
-        self.init_layout()
         self.worker_thread = None
+        self.init_layout()
 
+
+    """
+    Inital window setup
+    """
     def init_layout(self):
         button_layout = QVBoxLayout()
         button_layout.addWidget(self.start_button)
@@ -215,6 +223,10 @@ class MainWindow(QWidget):
             self.start_button.setText('Pause')
             self.animation_timer.start(100)
 
+
+    """
+    Increment slider to show progress of animation progress
+    """
     def increment_slider(self):
         current_value = self.slider.value()
         if current_value < self.slider.maximum():
@@ -227,6 +239,10 @@ class MainWindow(QWidget):
             self.central_widget.animation_running = False
             self.animation_timer.stop()
 
+
+    """
+    Update plot as the slider moves
+    """
     def slider_changed(self, value):
         frame = value
         self.central_widget.update_plot(frame)
@@ -235,6 +251,10 @@ class MainWindow(QWidget):
                 self.worker_thread.terminate()
                 self.worker_thread = None
     
+
+    """
+    Display a table to show additional information on selected data
+    """
     def show_selected_info(self):
         data_dict = self.central_widget.selected_points
         if data_dict:
@@ -271,8 +291,6 @@ class MainWindow(QWidget):
 
         # Launch the Window  to display selected indexes
         self.table_window.show()
-
-
 
 
 # THIS IS FOR TESTING

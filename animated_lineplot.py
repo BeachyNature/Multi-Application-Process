@@ -128,6 +128,7 @@ class MatplotlibWidget(QWidget):
                 markersize=8
             )
 
+
             # Add annotations for specific x-values
             specific_x_value = [10, 30, 50]  # Change this to the specific x-value you want to annotate
             for x, y in zip(self.x_data, self.y_data):

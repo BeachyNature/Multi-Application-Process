@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QMainWindow, QVBoxLayout, QHBoxLayout, QLabel, QWidget, QSlider, QPushButton, QTextEdit, QAction, QListWidget, QFileDialog
+from PyQt5.QtWidgets import QMainWindow, QVBoxLayout, QHBoxLayout, QLabel, QWidget, QSlider, QPushButton, QTextEdit, QAction, QListWidget, QFileDialog, QListWidgetItem
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QMutex, QMutexLocker
 from PyQt5.QtGui import QPixmap, QImage
 from PIL import Image
@@ -15,11 +15,10 @@ import atexit
 class TextCaptureThread(QThread):
     textCaptured = pyqtSignal(str)
 
-    def __init__(self, video_captures, text_capture_window):
+    def __init__(self, video_captures):
         super().__init__()
         self.running = False
         self.video_captures = video_captures
-        self.text_capture_window = text_capture_window
         self.mutex = QMutex()
 
     def run(self):
@@ -51,34 +50,93 @@ class TextCaptureThread(QThread):
         text = pytesseract.image_to_string(pil_image)
         return text
 
-class TextCaptureWindow(QTextEdit):
-    def __init__(self):
-        super().__init__()
-        self.hide()
+class VideoReaderThread(QThread):
+    frameProcessed = pyqtSignal(object)
 
-    def append_text(self, text):
-        current_text = self.toPlainText()
-        formatted_text = f"Captured Text:\n{text}\n{'='*30}\n"
-        self.setPlainText(current_text + formatted_text)
+    def __init__(self, video_captures):
+        super().__init__()
+        self.video_captures = video_captures
+        self.stopped = False
+
+    def run(self):
+        while not self.stopped:
+            for video_capture in self.video_captures:
+                ret, frame = video_capture.read()
+                if ret:
+                    self.frameProcessed.emit(frame)
+
+    def stop(self):
+        self.stopped = True
+
+class TextCaptureWindow(QWidget):
+    def __init__(self, video_player, video_paths, text_thread):
+        super().__init__()
+        # Set window title and size
+        self.setWindowTitle("OpenCV Video Player with Text Recognition")
+        self.setGeometry(100, 100, 800, 800)
+
+        # Current Video Instance
+        self.video_player = video_player
+
+        # Create label to display recognized text
+        self.text_label = QLabel("Recognized Text:")
+
+        # Create QListWidget to display recognized text items
+        self.text_list_widget = QListWidget()
+        self.text_list_widget.itemClicked.connect(self.on_item_click)
+
+        # Create layout
+        layout = QVBoxLayout()
+        # layout.addWidget(self.video_window)
+        layout.addWidget(self.text_label)
+        layout.addWidget(self.text_list_widget)
+        self.setLayout(layout)
+
+        # Timer for updating recognized text
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_text)
+        self.timer.start(1000)
+
+    def update_text(self):
+        if self.video_player.playing:
+            texts = self.video_player.get_text()
+            # Clear previous items in the list widget
+            self.text_list_widget.clear()
+            # Split text into individual words and add them as clickable items
+            for text in texts:
+                for word in text.split():
+                    item = QListWidgetItem(word)
+                    self.text_list_widget.addItem(item)
+
+    def on_item_click(self, item):
+        clicked_text = item.text()
+        print("Clicked text:", clicked_text)
+        self.video_player.highlight_text(clicked_text)
+
 
 class VideoPlayer(QWidget):
-    def __init__(self, video_paths, text_capture_thread, text_capture_window):
+    def __init__(self, video_paths, text_capture_thread):
         super().__init__()
+
+        # Variable for storing the clicked position
+        self.clicked_position = None
 
         self.text_capture_thread = text_capture_thread
         self.video_captures = [cv2.VideoCapture(video_path, cv2.CAP_FFMPEG) for video_path in video_paths]
         self.video_labels = [QLabel(self) for _ in video_paths]
 
+        # Layout setups
+        layout = QVBoxLayout()
+        h_layout = QHBoxLayout()
+
+        # Playback setup
+        self.playback_speed_label = QLabel("Playback Speed: 1x", self)
         self.play_pause_button = QPushButton("Start Video", self)
         self.play_pause_button.clicked.connect(self.toggle_play_pause)
 
-        self.playback_speed_label = QLabel("Playback Speed: 1x", self)
-
+        # Timer value setup
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_frame)
-
-        layout = QVBoxLayout()
-        h_layout = QHBoxLayout()
 
         self.playing = False
         self.playback_speed = 1  # Initial playback speed
@@ -99,24 +157,92 @@ class VideoPlayer(QWidget):
         layout.addWidget(self.playback_speed_label)
         layout.addWidget(self.playback_slider)
         layout.addWidget(self.play_pause_button)
-
         self.setLayout(layout)
-        self.text_capture_window = text_capture_window
+
+        # # Video reader thread
+        # self.video_reader_thread = VideoReaderThread(self.video_captures)
+        # self.video_reader_thread.frameProcessed.connect(self.update_frame)
+        # self.video_reader_thread.start()
 
     def update_frame(self):
         if self.playing:
             for i, video_capture in enumerate(self.video_captures):
                 ret, frame = video_capture.read()
                 if ret:
+                    # Use pytesseract to recognize text
+                    text = pytesseract.image_to_string(frame)
+
+                    # Check if clicked text is found in the current frame
+                    if self.clicked_position and self.clicked_position[i] is not None:
+                        x, y, w, h = self.clicked_position[i]
+                        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+                    # Convert frame to RGB format
                     image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
                     h, w, ch = image.shape
                     bytes_per_line = ch * w
                     qt_image = QImage(image.data, w, h, bytes_per_line, QImage.Format_RGB888)
                     pixmap = QPixmap.fromImage(qt_image)
                     self.video_labels[i].setPixmap(pixmap)
 
-            position = int(self.video_captures[self.max_index].get(cv2.CAP_PROP_POS_FRAMES))
-            self.playback_slider.setValue(position)
+
+    def get_text(self):
+        if self.playing:
+            if self.video_captures:
+                texts = []
+                for video_capture in self.video_captures:
+                    ret, frame = video_capture.read()
+                    if ret:
+                        # Convert frame to grayscale
+                        gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+                        # Use pytesseract to recognize text
+                        texts.append(pytesseract.image_to_string(gray_frame))
+                return texts
+            return []
+
+
+    def highlight_text(self, clicked_text):
+        print("Clicked text:", clicked_text)
+        # Reset the clicked position
+        self.clicked_position = None
+
+        # Search for the clicked text in the current frame
+        if self.playing:
+            if self.video_captures:
+                self.clicked_position = []
+                for video_capture in self.video_captures:
+                    ret, frame = video_capture.read()
+                    if ret:
+                        # Use pytesseract to recognize text
+                        text = pytesseract.image_to_string(frame)
+                        print("Recognized text:", text)
+
+                        # Check if clicked text is found in the current frame
+                        if clicked_text in text:
+                            print(f"Text '{clicked_text}' found in the video frame")
+
+                            # Find the location of the clicked text
+                            x, y, w, h = self.find_text_location(frame, clicked_text)
+                            print("Text position:", x, y, w, h)
+
+                            # Store the located position
+                            self.clicked_position.append((x, y, w, h))
+                        else:
+                            self.clicked_position.append(None)
+
+
+    def find_text_location(self, frame, text):
+        # Use pytesseract to recognize text and locate its bounding box
+        d = pytesseract.image_to_data(frame, output_type=pytesseract.Output.DICT)
+        n_boxes = len(d['text'])
+        for i in range(n_boxes):
+            if d['text'][i] == text:
+                x, y, w, h = d['left'][i], d['top'][i], d['width'][i], d['height'][i]
+                return x, y, w, h
+        return None, None, None, None
+
 
     def set_video_position(self, position):
         for video_capture in self.video_captures:
@@ -149,21 +275,20 @@ class VideoPlayerApp(QMainWindow):
     def __init__(self, video_paths):
         super().__init__()
 
-        # Get thread created, wait for user to open
-        self.text_capture_window = TextCaptureWindow()
-        self.text_capture_thread = TextCaptureThread(video_captures=[cv2.VideoCapture(video_path, cv2.CAP_FFMPEG) for video_path in video_paths], text_capture_window=self.text_capture_window)
-        self.text_capture_thread.textCaptured.connect(self.handle_text_captured)
+        self.text_capture_thread = TextCaptureThread(video_captures=[cv2.VideoCapture(video_path, cv2.CAP_FFMPEG) for video_path in video_paths])
         self.text_capture_thread.start()
 
         # Setup main window
-        self.video_player = VideoPlayer(video_paths, self.text_capture_thread, self.text_capture_window)
+        self.video_player = VideoPlayer(video_paths, self.text_capture_thread)
+        self.text_capture_window = TextCaptureWindow(self.video_player, video_paths,
+                                                     self.text_capture_thread)
         self.create_menus()
 
         central_widget = QWidget()
         central_layout = QVBoxLayout()
 
         central_layout.addWidget(self.video_player)
-        central_layout.addWidget(self.text_capture_window)
+        central_layout.addWidget(self.text_capture_window) # Need to have hidden at start
 
         central_widget.setLayout(central_layout)
         self.setCentralWidget(central_widget)
@@ -213,12 +338,6 @@ class VideoPlayerApp(QMainWindow):
     def toggle_text_capture_window(self):
         current_visibility = self.text_capture_window.isVisible()
         self.text_capture_window.setVisible(not current_visibility)
-
-    """
-    Recieve the text that the text window captures
-    """
-    def handle_text_captured(self, text):
-        self.text_capture_window.append_text(text)
 
     """
     Toggle the playback by this action

@@ -16,23 +16,28 @@ Created QAbstractionTableModel that each dataframe loaded in utilizes
 class DataFrameTableModel(QAbstractTableModel):
     def __init__(self, dataframe, column_checkboxes, parent=None):
         super(DataFrameTableModel, self).__init__(parent)
-        self.column_checkboxes = column_checkboxes
+
+        # Define Values
+        self._bool = False
         self.highlighted_cells = []
+        self.result = pd.DataFrame()
         self._selected_indexes = set()
+
+        self.column_checkboxes = column_checkboxes
         self._dataframe = dataframe
         self.visible_rows = 100
         self.text = None
-        self._bool = False
         
         # Set the visible row count
         self.update_visible_columns()
+
     """
     Row counter that factors in batch size loading
     """
     def rowCount(self, parent=None):
-        if self._bool:
-            return min(self.visible_rows, len(self.highlighted_cells))
-        elif not self._bool:
+        # if self._bool:
+        #     return min(self.visible_rows, len(self.highlighted_cells))
+        # elif not self._bool:
             return min(self.visible_rows, len(self._dataframe))
 
 
@@ -163,7 +168,7 @@ class DataFrameTableModel(QAbstractTableModel):
             '>': operator.gt,
             '<': operator.lt,
             '!=': operator.ne,
-            '==': operator.eq
+            '=': operator.eq
         }
 
         if self.text:
@@ -172,37 +177,33 @@ class DataFrameTableModel(QAbstractTableModel):
 
             for row, col in product(range(self.visible_rows), range(self.columnCount())):
                 if len(parts) > 1:
-
-                    val = parts[0].rstrip() # Remove spaces
+                    
+                    # Seperate the search values into parts
+                    val = parts[0].rstrip()
                     val1 = parts[1].lstrip()
-
                     col_num = self._dataframe.columns.get_loc(val)
 
+                    # Check if value is a digit or not for better searching
                     if val1.isdigit():
-                        item = int(self._dataframe.iat[row, col_num])
-                        cond = int(val1)
+                        for op in valid_operators:
+                            if op in self.text:
+                                self.result = self._dataframe.query(f"{val}{op}{val1}")
                     else:
-                        item = str(self._dataframe.iat[row, col_num])
-                        cond = str(val1)
+                        self.result = self._dataframe[self._dataframe.iloc[:, col_num] == val1]
+                    
+                    index_values = self.result.index.tolist()
+                    for i in index_values:
+                        self.highlighted_cells.append(self.index(i, col_num))
+                    self._bool = True
 
-                    for op in valid_operators:
-                        if op in self.text:
-                            if valid_operators[op](item, cond):
-                                self.highlighted_cells.append(self.index(row, col))
-                                self._bool = True
-
-                    self.uncheck_all_other_columns(val) # Should be a checkbox option
-
-                else:
+                else: # If no conditional is searched or not
                     item = str(self._dataframe.iat[row, col])
                     if self.text and self.text in item:
                         self.highlighted_cells.append(self.index(row, col))
-
-        else:
-            self._bool = False
-            self.uncheck_all_other_columns(None)
-
-        self.layoutChanged.emit()
+                    self._bool = False
+            
+            # Update layout
+            self.layoutChanged.emit()
         return
 
 
@@ -219,6 +220,16 @@ class DataFrameTableModel(QAbstractTableModel):
                 self.dataChanged.emit(index, index, [role])
                 return True
         return False
+
+
+    """
+    Populate the results window
+    """
+    def get_result(self):
+        if self._bool:
+            return self.result
+        else:
+            return self.get_dataframe()
 
 
 """
@@ -623,51 +634,49 @@ class DataFrameViewer(QWidget):
 
 
     def load_search_results(self):
+
         # Get the current dataframe from the active tab
         current_index = self.tab_widget.currentIndex()
         if current_index != -1:
             self.current_table = self.tab_widget.widget(current_index)
             if isinstance(self.current_table, QTableView):
                 model = self.current_table.model()
-                if model:
-                    
-                    # Setup window
-                    self.central_widget = QWidget()
-                    self.find_items_layout = QVBoxLayout(self.central_widget)
-                    
-                    # Definied dataframe
-                    df = model.get_dataframe()
-                    
+                self.central_widget = QWidget()
+                self.find_items_layout = QVBoxLayout(self.central_widget)
+                
+                # Definied dataframe
+                df = model.get_result()
+                
+                if not model._bool:
                     # Use applymap with vectorized string methods to search for the text in each cell
                     search_result = df[df.apply(lambda col: col.map(lambda x: str(x).lower().find(self.search_text.lower()) != -1))]
-
+                
                     # Get all non-NaN values and create a new DataFrame with original indices and a column indicating where the item is found
                     non_nan_series = search_result.stack().dropna()
-                    non_nan_df = pd.DataFrame({'value': non_nan_series.values, 'search_index': non_nan_series.index.get_level_values(0), 'column': non_nan_series.index.get_level_values(1)})
+                    non_nan_df = pd.DataFrame({'value': non_nan_series.values,
+                                                'search_index': non_nan_series.index.get_level_values(0),
+                                                'column': non_nan_series.index.get_level_values(1)})
+                    df = non_nan_df.groupby('search_index').agg({'value': list, 'column': 'first'}).reset_index()
+                
+                # Create a new QAbstractTableModel for search results
+                self.search_results_model = DataFrameTableModel(df, None)
+                self.search_results_table = QTableView()
+                self.search_results_table.setModel(self.search_results_model)
 
+                # Hide the vertical header (index column)
+                self.search_results_table.verticalHeader().setVisible(False)
 
-                    # Group by the index and create a list of values for each group
-                    grouped_df = non_nan_df.groupby('search_index').agg({'value': list, 'column': 'first'}).reset_index()
-                    
-                    # Create a new QAbstractTableModel for search results
-                    self.search_results_model = DataFrameTableModel(grouped_df, None)
-                    self.search_results_table = QTableView()
-                    self.search_results_table.setModel(self.search_results_model)
+                # Add to layout
+                self.find_items_layout.addWidget(self.search_results_table)
 
-                    # Hide the vertical header (index column)
-                    self.search_results_table.verticalHeader().setVisible(False)
+                # Signal Callers
+                self.search_results_table.setSelectionBehavior(QTableView.SelectRows)
+                self.search_results_table.selectionModel().selectionChanged.connect(self.on_clicked)
 
-                    # Add to layout
-                    self.find_items_layout.addWidget(self.search_results_table)
-
-                    # Signal Callers
-                    self.search_results_table.setSelectionBehavior(QTableView.SelectRows)
-                    self.search_results_table.selectionModel().selectionChanged.connect(self.on_clicked)
-
-                    # Add a new tab for the search results
-                    # search_results_tab_name = "Search Results"
-                    # self.tab_widget.addTab(search_results_table, search_results_tab_name)
-                    # self.tab_widget.setCurrentIndex(self.tab_widget.indexOf(search_results_table))
+                # Add a new tab for the search results
+                # search_results_tab_name = "Search Results"
+                # self.tab_widget.addTab(search_results_table, search_results_tab_name)
+                # self.tab_widget.setCurrentIndex(self.tab_widget.indexOf(search_results_table))
         
         # Load the find items window
         self.central_widget.show()

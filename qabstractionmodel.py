@@ -2,13 +2,38 @@ import os
 import re
 import operator
 import pandas as pd
-from itertools import product
 from PyQt5.QtGui import QColor, QDropEvent, QDragEnterEvent
-from PyQt5.QtCore import Qt, QAbstractTableModel
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,\
-                            QTableView, QCheckBox, QScrollArea, QTabWidget, QSplitter,\
-                            QFileDialog
+from PyQt5.QtCore import Qt, QAbstractTableModel, QThread, pyqtSignal
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton,\
+                            QLineEdit, QTableView, QCheckBox, QScrollArea,\
+                            QTabWidget, QSplitter, QFileDialog
 
+
+"""
+Searching thread to organize data into QModelIndexes
+"""
+class SearchThread(QThread):
+    search_finished = pyqtSignal(list)
+
+    def __init__(self, table, result, col_num, visible_rows):
+        super().__init__()
+        self.highlighted_cells = []
+        self.visible_rows = visible_rows
+        self.dataframe = result
+        self.col_num = col_num
+        self.table = table
+
+    def run(self):
+        index_values = self.search_text_in_dataframe(self.dataframe, self.col_num)
+        self.search_finished.emit(index_values)
+
+    def search_text_in_dataframe(self, result, col_num):
+        # Store the QModelIndex objects corresponding to the matched rows in dataframe
+        index_values = result.index.tolist()
+        for i in range(0, len(index_values)):
+            self.highlighted_cells.append(self.table.index(index_values[i], col_num))
+        return self.highlighted_cells
+    
 
 """
 Created QAbstractionTableModel that each dataframe loaded in utilizes
@@ -18,24 +43,26 @@ class DataFrameTableModel(QAbstractTableModel):
         super(DataFrameTableModel, self).__init__(parent)
 
         # Define Values
+        self.text = None
         self._bool = False
         self.highlighted_cells = []
         self.result = pd.DataFrame()
         self._selected_indexes = set()
 
+        # Dataframe configure/setup
         self.column_checkboxes = column_checkboxes
         self._dataframe = dataframe
         self.visible_rows = 100
-        self.text = None
         
         # Set the visible row count
         self.update_visible_columns()
+
 
     """
     Row counter that factors in batch size loading
     """
     def rowCount(self, parent=None):
-        # if self._bool:
+        # if self._bool: # TODO: Use with checkbox
         #     return min(self.visible_rows, len(self.highlighted_cells))
         # elif not self._bool:
             return min(self.visible_rows, len(self._dataframe))
@@ -158,12 +185,12 @@ class DataFrameTableModel(QAbstractTableModel):
             else:
                 checkbox.setChecked(True)
 
-    
+
     """
-    Gets highlights the found text in the desired tables
+    Update the searched results by highlighting specific columns
     """
     def update_search_text(self):
-        self.highlighted_cells = []
+        
         valid_operators = {
             '>': operator.gt,
             '<': operator.lt,
@@ -171,40 +198,43 @@ class DataFrameTableModel(QAbstractTableModel):
             '=': operator.eq
         }
 
-        if self.text:
-            pattern = '|'.join(map(re.escape, valid_operators.keys()))
-            parts = re.split(pattern, self.text, 1)
+        pattern = '|'.join(map(re.escape, valid_operators.keys()))
+        parts = re.split(pattern, self.text, 1)
 
-            for row, col in product(range(self.visible_rows), range(self.columnCount())):
-                if len(parts) > 1:
-                    
-                    # Seperate the search values into parts
-                    val = parts[0].rstrip()
-                    val1 = parts[1].lstrip()
-                    col_num = self._dataframe.columns.get_loc(val)
+        if len(parts) > 1: # Check if conditional
+            val = parts[0].rstrip()
+            condition = parts[1].lstrip()
+            self.col_num = self._dataframe.columns.get_loc(val)
 
-                    # Check if value is a digit or not for better searching
-                    if val1.isdigit():
-                        for op in valid_operators:
-                            if op in self.text:
-                                self.result = self._dataframe.query(f"{val}{op}{val1}")
-                    else:
-                        self.result = self._dataframe[self._dataframe.iloc[:, col_num] == val1]
-                    
-                    index_values = self.result.index.tolist()
-                    for i in index_values:
-                        self.highlighted_cells.append(self.index(i, col_num))
-                    self._bool = True
+            # Check if value is a digit or not for better searching
+            if condition.isdigit():
+                for op in valid_operators:
+                    if op in self.text:
+                        self.result = self._dataframe.iloc[:self.visible_rows].query(f"{val}{op}{condition}")
+            else:
+                self.result = self._dataframe.iloc[:self.visible_rows].query(f"{val} == '{condition}'")
+            self._bool = True
 
-                else: # If no conditional is searched or not
-                    item = str(self._dataframe.iat[row, col])
-                    if self.text and self.text in item:
-                        self.highlighted_cells.append(self.index(row, col))
-                    self._bool = False
-            
-            # Update layout
-            self.layoutChanged.emit()
+        # Start the search thread
+        self.search_thread = SearchThread(self, self.result, self.col_num, self.visible_rows)
+        self.search_thread.search_finished.connect(self.handle_search_results)
+        self.search_thread.start()
+
+        #     else: # If no conditional is searched or not
+        #         item = str(self._dataframe.iat[row, col])
+        #         if self.text and self.text in item:
+        #             self.highlighted_cells.append(self.index(row, col))
+        #         self._bool = False
+
         return
+
+
+    """
+    Apply the newly converted dataframe index values to qmodelindex to be highlighted
+    """
+    def handle_search_results(self, index_values):
+        self.highlighted_cells = index_values
+        self.layoutChanged.emit()
 
 
     """
@@ -283,13 +313,11 @@ class ExpandableText(QWidget):
         options_layout = QVBoxLayout(self.options_widget)
         for checkbox in self.column_checkboxes.values():
             options_layout.addWidget(checkbox)
-            options_layout.update()
 
+        # Apply widgets
         button_layout.addWidget(self.check_button, alignment=Qt.AlignTop)
         button_layout.addWidget(self.options_widget)
-        button_layout.update()
-
-        layout.addLayout(button_layout)  # Use the QVBoxLayout here
+        layout.addLayout(button_layout)
         layout.addStretch()
         layout.update()
         self.setLayout(layout)
@@ -336,7 +364,8 @@ class ExpandableText(QWidget):
             # If there is an existing vertical layout, add the new instance to it
             if existing_vertical_layout:
                 existing_vertical_layout.addWidget(new_instance)
-
+        
+        # Accept action to add new csv
         event.acceptProposedAction()
 
 
@@ -373,8 +402,8 @@ class ExpandableText(QWidget):
     Tells the model to load the next 100 rows
     """
     def load_more_data(self, table, value):
-            current_value = table.verticalScrollBar().value()
             max_value = table.verticalScrollBar().maximum()
+            current_value = table.verticalScrollBar().value()
 
             def is_within_range(value1, value2, range_limit=20):
                 return abs(value1 - value2) <= range_limit
@@ -383,6 +412,7 @@ class ExpandableText(QWidget):
                 if len(self.dataframe) > 100:
                     self.model_dict[table].update_visible_rows()
                     self.model_dict[table].update_search_text()
+
 
     """
     Setup of the data in their respective tables and tabs
@@ -398,6 +428,7 @@ class ExpandableText(QWidget):
                 table = QTableView()
                 table.setModel(model)
                 table.setSelectionBehavior(QTableView.SelectItems)
+                table.verticalHeader().setVisible(False)
 
                 # Make tab for loaded data - save model
                 self.model_dict[table] = model
@@ -415,10 +446,8 @@ class ExpandableText(QWidget):
                 # Signal Callers
                 self.tab_widget.currentChanged.connect(self.on_tab_changed)
                 table.selectionModel().selectionChanged.connect(self.update_view)
-                vertical_scrollbar = table.verticalScrollBar()
-                vertical_scrollbar.valueChanged.connect(lambda value, table=table: self.load_more_data(table, value))
+                table.verticalScrollBar().valueChanged.connect(lambda value, table=table: self.load_more_data(table, value))
                 self.check_status(model)
-
         else:
             print(f"{tab_name} is empty! Table unable to load!")
 
@@ -444,7 +473,6 @@ class ExpandableText(QWidget):
                 col = index.column()
                 header = model.headerData(col, Qt.Horizontal)
                 selected_data[header] = selected_data.get(header, []) + [model._dataframe.iloc[row, col]]
-
         self.saved_data = pd.DataFrame(selected_data)
 
 
@@ -456,6 +484,9 @@ class ExpandableText(QWidget):
             table_widget.selectionModel().clear()
 
 
+    """
+    Save CSV based on what user selected in table
+    """
     def save_csv(self):
         if self.saved_data is not None:
             if not self.saved_data.empty:
@@ -465,8 +496,7 @@ class ExpandableText(QWidget):
                 if file_path:
                     self.saved_data.to_csv(file_path, index=False)
                     print("Selected Data saved to:", file_path)
-                print(f"{self.saved_data = }")
-        return 
+                return 
 
 
 """
@@ -478,7 +508,6 @@ class DataFrameViewer(QWidget):
         self.incr = 0
         self.data = data
         self._bool = False
-        self.test = False
         self.init_ui()
 
 
@@ -488,13 +517,10 @@ class DataFrameViewer(QWidget):
     def init_ui(self):
 
         # Setup Layouts
-        self.center_layout = QHBoxLayout()
-        self.main_layout = QVBoxLayout()
-
-        self.left_layout = QVBoxLayout()
-        self.right_layout = QVBoxLayout()
-
+        main_layout = QVBoxLayout()
         labels_layout = QVBoxLayout()
+        center_layout = QHBoxLayout()
+
         self.main_splitter = QSplitter()
         self.table_split = QSplitter(Qt.Horizontal)
 
@@ -518,7 +544,7 @@ class DataFrameViewer(QWidget):
         self.csv_button = QPushButton("Save Data")
         self.load_search_results_button = QPushButton("Load Search Results")
         self.load_search_results_button.clicked.connect(self.load_search_results)
-        self.main_layout.addWidget(self.load_search_results_button)
+        main_layout.addWidget(self.load_search_results_button)
 
         # Run the data through the expanded text list
         for csv_name, df in self.data.items():
@@ -535,19 +561,19 @@ class DataFrameViewer(QWidget):
 
         # Create Splitter 
         self.table_split.addWidget(self.tab_widget)
-
-        # Main Layout
-        labels_layout.addWidget(self.csv_button)
-        self.main_layout.addWidget(search_bar)
-        self.main_layout.addWidget(self.all_table)
-        self.center_layout.addWidget(self.main_splitter)
-        self.main_layout.addLayout(self.center_layout)
-        self.setLayout(self.main_layout)
-
+        
         # Layout configure
         self.main_splitter.addWidget(scroll_area)
         self.main_splitter.addWidget(self.table_split)
         self.main_splitter.setStretchFactor(0, 1)
+
+        # Main Layout
+        labels_layout.addWidget(self.csv_button)
+        main_layout.addWidget(search_bar)
+        main_layout.addWidget(self.all_table)
+        center_layout.addWidget(self.main_splitter)
+        main_layout.addLayout(center_layout)
+        self.setLayout(main_layout)
 
         # Tab widget, double click to compare and able to be removed
         self.tab_widget.setMovable(True)
@@ -584,7 +610,6 @@ class DataFrameViewer(QWidget):
             self.new_tab_widget = QTabWidget()
             self.new_tab_widget.setTabsClosable(True)
             dataframe = self.get_current_tab_dataframe()
-            new_name = tab_name + '-' + str(self.incr)
         
             # Make it that the user can't remove the last tab
             if self.new_tab_widget.count() == 0:
@@ -592,6 +617,7 @@ class DataFrameViewer(QWidget):
 
             # Ensure dataframe is not empty before creating splitter item
             if not dataframe.empty:
+                new_name = tab_name + '-' + str(self.incr)
                 ExpandableText(dataframe, new_name, self.new_tab_widget,
                                index, self.table_split, self.model_dict,
                                self.table_dict, self.csv_button)
@@ -600,6 +626,7 @@ class DataFrameViewer(QWidget):
     
             # Remove tab that user wants to compare
             self.tab_widget.removeTab(index)
+
 
     """
     Make all tabs after the first one closable
@@ -633,6 +660,9 @@ class DataFrameViewer(QWidget):
             run_search(value)
 
 
+    """
+    Load the search results into the results window
+    """
     def load_search_results(self):
 
         # Get the current dataframe from the active tab
@@ -662,9 +692,7 @@ class DataFrameViewer(QWidget):
                 self.search_results_model = DataFrameTableModel(df, None)
                 self.search_results_table = QTableView()
                 self.search_results_table.setModel(self.search_results_model)
-
-                # Hide the vertical header (index column)
-                self.search_results_table.verticalHeader().setVisible(False)
+                self.search_results_table.verticalHeader().setVisible(False) # Hide table index
 
                 # Add to layout
                 self.find_items_layout.addWidget(self.search_results_table)
@@ -673,7 +701,7 @@ class DataFrameViewer(QWidget):
                 self.search_results_table.setSelectionBehavior(QTableView.SelectRows)
                 self.search_results_table.selectionModel().selectionChanged.connect(self.on_clicked)
 
-                # Add a new tab for the search results
+                # Add a new tab for each table
                 # search_results_tab_name = "Search Results"
                 # self.tab_widget.addTab(search_results_table, search_results_tab_name)
                 # self.tab_widget.setCurrentIndex(self.tab_widget.indexOf(search_results_table))
@@ -686,11 +714,14 @@ class DataFrameViewer(QWidget):
     """
     def on_clicked(self, selected, deselected):
         for index in selected.indexes():
-            # Use the index to get the data
             if index.column() == 0:
                 data_at_index = self.search_results_model.data(index, Qt.DisplayRole)
-    
+
+        # Scroll through the batch size value to get to the value of interest
+        val = self.current_table.verticalScrollBar()
+        for _ in range(int(data_at_index[0])):
+            val.setValue(val.maximum())
+
         curr_index = self.current_table.model().index(int(data_at_index), 0)
-        print(f"{curr_index = }")
         self.current_table.scrollTo(curr_index, QTableView.PositionAtTop)
 

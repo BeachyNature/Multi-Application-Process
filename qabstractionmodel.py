@@ -204,7 +204,7 @@ class DataFrameTableModel(QAbstractTableModel):
         if len(parts) > 1: # Check if conditional
             val = parts[0].rstrip()
             condition = parts[1].lstrip()
-            self.col_num = self._dataframe.columns.get_loc(val)
+            col_num = self._dataframe.columns.get_loc(val)
 
             # Check if value is a digit or not for better searching
             if condition.isdigit():
@@ -216,7 +216,7 @@ class DataFrameTableModel(QAbstractTableModel):
             self._bool = True
 
         # Start the search thread
-        self.search_thread = SearchThread(self, self.result, self.col_num, self.visible_rows)
+        self.search_thread = SearchThread(self, self.result, col_num, self.visible_rows)
         self.search_thread.search_finished.connect(self.handle_search_results)
         self.search_thread.start()
 
@@ -665,46 +665,46 @@ class DataFrameViewer(QWidget):
     """
     def load_search_results(self):
 
-        # Get the current dataframe from the active tab
-        current_index = self.tab_widget.currentIndex()
-        if current_index != -1:
-            self.current_table = self.tab_widget.widget(current_index)
-            if isinstance(self.current_table, QTableView):
-                model = self.current_table.model()
-                self.central_widget = QWidget()
-                self.find_items_layout = QVBoxLayout(self.central_widget)
-                
-                # Definied dataframe
-                df = model.get_result()
-                
-                if not model._bool:
-                    # Use applymap with vectorized string methods to search for the text in each cell
-                    search_result = df[df.apply(lambda col: col.map(lambda x: str(x).lower().find(self.search_text.lower()) != -1))]
-                
-                    # Get all non-NaN values and create a new DataFrame with original indices and a column indicating where the item is found
-                    non_nan_series = search_result.stack().dropna()
-                    non_nan_df = pd.DataFrame({'value': non_nan_series.values,
-                                                'search_index': non_nan_series.index.get_level_values(0),
-                                                'column': non_nan_series.index.get_level_values(1)})
-                    df = non_nan_df.groupby('search_index').agg({'value': list, 'column': 'first'}).reset_index()
-                
-                # Create a new QAbstractTableModel for search results
-                self.search_results_model = DataFrameTableModel(df, None)
-                self.search_results_table = QTableView()
-                self.search_results_table.setModel(self.search_results_model)
-                self.search_results_table.verticalHeader().setVisible(False) # Hide table index
+        # # Get the current dataframe from the active tab
+        # current_index = self.tab_widget.currentIndex()
+        # if current_index != -1:
+        #     self.current_table = self.tab_widget.widget(current_index)
+        # if isinstance(self.current_table, QTableView):
 
-                # Add to layout
-                self.find_items_layout.addWidget(self.search_results_table)
+        # Add to layout to tab
+        result_tab = QTabWidget()
+        self.central_widget = QWidget()
+        find_items_layout = QVBoxLayout(self.central_widget)
 
-                # Signal Callers
-                self.search_results_table.setSelectionBehavior(QTableView.SelectRows)
-                self.search_results_table.selectionModel().selectionChanged.connect(self.on_clicked)
+        for i in range(self.tab_widget.count()):
+            # Defined model and data
+            model = self.tab_widget.widget(i).model()
+            df = model.get_result()
+            
+            if not model._bool:
+                # Use applymap with vectorized string methods to search for the text in each cell
+                search_result = df[df.apply(lambda col: col.map(lambda x: str(x).lower().find(self.search_text.lower()) != -1))]
+            
+                # Get all non-NaN values and create a new DataFrame with original indices and a column indicating where the item is found
+                non_nan_series = search_result.stack().dropna()
+                non_nan_df = pd.DataFrame({'value': non_nan_series.values,
+                                            'search_index': non_nan_series.index.get_level_values(0),
+                                            'column': non_nan_series.index.get_level_values(1)})
+                df = non_nan_df.groupby('search_index').agg({'value': list, 'column': 'first'}).reset_index()
+            
+            # Create a new QAbstractTableModel for search results
+            self.search_results_model = DataFrameTableModel(df, None)
+            self.search_results_table = QTableView()
+            self.search_results_table.setModel(self.search_results_model)
+            self.search_results_table.verticalHeader().setVisible(False) # Hide table index
 
-                # Add a new tab for each table
-                # search_results_tab_name = "Search Results"
-                # self.tab_widget.addTab(search_results_table, search_results_tab_name)
-                # self.tab_widget.setCurrentIndex(self.tab_widget.indexOf(search_results_table))
+            # Add new tab
+            find_items_layout.addWidget(result_tab)
+            result_tab.addTab(self.search_results_table, self.tab_widget.tabText(i))
+            
+            # Signal Callers
+            self.search_results_table.setSelectionBehavior(QTableView.SelectRows)
+            self.search_results_table.selectionModel().selectionChanged.connect(self.on_clicked)
         
         # Load the find items window
         self.central_widget.show()

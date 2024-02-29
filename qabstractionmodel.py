@@ -655,6 +655,7 @@ class DataFrameViewer(QWidget):
             value = self.tab_widget
             run_search(value)
    
+        # Check if user is searching all split tables
         if self._bool and self.all_table.isChecked():
             value = self.new_tab_widget
             run_search(value)
@@ -665,63 +666,80 @@ class DataFrameViewer(QWidget):
     """
     def load_search_results(self):
 
-        # # Get the current dataframe from the active tab
-        # current_index = self.tab_widget.currentIndex()
-        # if current_index != -1:
-        #     self.current_table = self.tab_widget.widget(current_index)
-        # if isinstance(self.current_table, QTableView):
-
         # Add to layout to tab
-        result_tab = QTabWidget()
+        self.tab_dict = {}
+        self.result_tab = QTabWidget()
         self.central_widget = QWidget()
         find_items_layout = QVBoxLayout(self.central_widget)
 
-        for i in range(self.tab_widget.count()):
-            # Defined model and data
-            model = self.tab_widget.widget(i).model()
-            df = model.get_result()
+        # Iterate through each tab and their table
+        for index in range(self.tab_widget.count()):
+            tab_name = self.tab_widget.tabText(index)
+            model = self.tab_widget.widget(index).model()
+            data = model.get_result()
             
+            # If user is searching with a conditional or not
             if not model._bool:
                 # Use applymap with vectorized string methods to search for the text in each cell
-                search_result = df[df.apply(lambda col: col.map(lambda x: str(x).lower().find(self.search_text.lower()) != -1))]
+                search_result = data[data.apply(lambda col: col.map(lambda x: str(x).lower().find(self.search_text.lower()) != -1))]
             
                 # Get all non-NaN values and create a new DataFrame with original indices and a column indicating where the item is found
-                non_nan_series = search_result.stack().dropna()
-                non_nan_df = pd.DataFrame({'value': non_nan_series.values,
-                                            'search_index': non_nan_series.index.get_level_values(0),
-                                            'column': non_nan_series.index.get_level_values(1)})
-                df = non_nan_df.groupby('search_index').agg({'value': list, 'column': 'first'}).reset_index()
-            
+                non_nan = search_result.stack().dropna()
+                df = pd.DataFrame({'value': non_nan.values,
+                                   'search_index': non_nan.index.get_level_values(0)})
+                data = df.groupby('search_index').agg({'value': list}).reset_index()
+            else:
+                print(f"Conditional Search processing in {tab_name}...")
+
             # Create a new QAbstractTableModel for search results
-            self.search_results_model = DataFrameTableModel(df, None)
+            self.search_results_model = DataFrameTableModel(data, None)
             self.search_results_table = QTableView()
             self.search_results_table.setModel(self.search_results_model)
-            self.search_results_table.verticalHeader().setVisible(False) # Hide table index
+
+            # Formatters
+            self.search_results_table.verticalHeader().setVisible(False)
 
             # Add new tab
-            find_items_layout.addWidget(result_tab)
-            result_tab.addTab(self.search_results_table, self.tab_widget.tabText(i))
-            
+            find_items_layout.addWidget(self.result_tab)
+            self.result_tab.addTab(self.search_results_table, tab_name)
+
             # Signal Callers
             self.search_results_table.setSelectionBehavior(QTableView.SelectRows)
             self.search_results_table.selectionModel().selectionChanged.connect(self.on_clicked)
+
+            # Defined model and data
+            if self.tab_widget.tabText(index) not in self.tab_dict:
+                self.tab_dict[tab_name] = [index, self.search_results_table]
+            else:
+                return
         
         # Load the find items window
         self.central_widget.show()
-    
+
+
     """
     Index to the right highlighted value when clicked
     """
-    def on_clicked(self, selected, deselected):
-        for index in selected.indexes():
-            if index.column() == 0:
-                data_at_index = self.search_results_model.data(index, Qt.DisplayRole)
+    def on_clicked(self):
 
-        # Scroll through the batch size value to get to the value of interest
-        val = self.current_table.verticalScrollBar()
-        for _ in range(int(data_at_index[0])):
-            val.setValue(val.maximum())
+        # Go to current table index
+        current_index = self.result_tab.currentIndex()
+        tab_item = self.tab_dict[self.result_tab.tabText(current_index)]
+        self.tab_widget.setCurrentIndex(tab_item[0])
 
-        curr_index = self.current_table.model().index(int(data_at_index), 0)
-        self.current_table.scrollTo(curr_index, QTableView.PositionAtTop)
+        # Defined tables
+        current_table = self.tab_widget.widget(tab_item[0])
+        results_table = self.result_tab.widget(tab_item[0])
 
+        # Go to selected table index
+        selected_indexes = tab_item[1].selectionModel().selectedIndexes()
+        if selected_indexes:
+            index = results_table.model().data(selected_indexes[0], Qt.DisplayRole)
+
+            # Scroll through the batch size value to get to the value of interest
+            val = current_table.verticalScrollBar()
+            for _ in range(int(index)):
+                val.setValue(val.maximum())
+            current_table.selectRow(int(index)-1)
+        else:
+            return

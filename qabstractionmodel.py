@@ -2,6 +2,7 @@ import os
 import re
 import operator
 import pandas as pd
+import polars as pl
 from PyQt5.QtGui import QColor, QDropEvent, QDragEnterEvent
 from PyQt5.QtCore import Qt, QAbstractTableModel, QThread, pyqtSignal
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton,\
@@ -46,7 +47,7 @@ class DataFrameTableModel(QAbstractTableModel):
         self.text = None
         self._bool = False
         self.highlighted_cells = []
-        self.result = pd.DataFrame()
+        self.result = pl.DataFrame()
         self._selected_indexes = set()
 
         # Dataframe configure/setup
@@ -84,11 +85,7 @@ class DataFrameTableModel(QAbstractTableModel):
 
         if role == Qt.DisplayRole:
             if self.column_checkboxes is not None:
-                column_name = self.visible_columns[index.column()]
-                row_index = self._dataframe.index[index.row()]
-                return str(self._dataframe.loc[row_index, column_name])
-            else:
-                return str(self._dataframe.iloc[index.row(), index.column()])
+                return str(self._dataframe[index.row(), index.column()])
 
         if role == Qt.BackgroundRole:
             if index in self.highlighted_cells:
@@ -198,27 +195,28 @@ class DataFrameTableModel(QAbstractTableModel):
             '=': operator.eq
         }
 
-        pattern = '|'.join(map(re.escape, valid_operators.keys()))
-        parts = re.split(pattern, self.text, 1)
+        if self.text: # If search string is avaliable
+            pattern = '|'.join(map(re.escape, valid_operators.keys()))
+            parts = re.split(pattern, self.text, 1)
 
-        if len(parts) > 1: # Check if conditional
-            val = parts[0].rstrip()
-            condition = parts[1].lstrip()
-            col_num = self._dataframe.columns.get_loc(val)
+            if len(parts) > 1: # Check if conditional
+                val = parts[0].rstrip()
+                condition = parts[1].lstrip()
+                col_num = self._dataframe.columns.get_loc(val)
 
-            # Check if value is a digit or not for better searching
-            if condition.isdigit():
-                for op in valid_operators:
-                    if op in self.text:
-                        self.result = self._dataframe.iloc[:self.visible_rows].query(f"{val}{op}{condition}")
-            else:
-                self.result = self._dataframe.iloc[:self.visible_rows].query(f"{val} == '{condition}'")
-            self._bool = True
+                # Check if value is a digit or not for better searching
+                if condition.isdigit():
+                    for op in valid_operators:
+                        if op in self.text:
+                            self.result = self._dataframe.iloc[:self.visible_rows].query(f"{val}{op}{condition}")
+                else:
+                    self.result = self._dataframe.iloc[:self.visible_rows].query(f"{val} == '{condition}'")
+                self._bool = True
 
-        # Start the search thread
-        self.search_thread = SearchThread(self, self.result, col_num, self.visible_rows)
-        self.search_thread.search_finished.connect(self.handle_search_results)
-        self.search_thread.start()
+            # Start the search thread
+            self.search_thread = SearchThread(self, self.result, col_num, self.visible_rows)
+            self.search_thread.search_finished.connect(self.handle_search_results)
+            self.search_thread.start()
 
         #     else: # If no conditional is searched or not
         #         item = str(self._dataframe.iat[row, col])
@@ -303,7 +301,7 @@ class ExpandableText(QWidget):
         self.check_button = QPushButton(self.csv_name + " +")
         self.check_button.clicked.connect(self.toggle_expansion)
 
-        if not self.dataframe.empty:
+        if not self.dataframe.is_empty():
             self.check_button.setStyleSheet('border: none; color: black; font-size: 24px;')
         else:
             self.check_button.setStyleSheet('border: none; color: red; font-size: 24px;')
@@ -418,10 +416,8 @@ class ExpandableText(QWidget):
     Setup of the data in their respective tables and tabs
     """
     def setup_data(self):
-
-        tab_name = self.csv_name
-        if not self.dataframe.empty:
-            if tab_name not in self.table_dict:
+        if not self.dataframe.is_empty():
+            if self.csv_name not in self.table_dict:
                 model = DataFrameTableModel(self.dataframe, self.column_checkboxes)
 
                 # Apply new model
@@ -449,7 +445,7 @@ class ExpandableText(QWidget):
                 table.verticalScrollBar().valueChanged.connect(lambda value, table=table: self.load_more_data(table, value))
                 self.check_status(model)
         else:
-            print(f"{tab_name} is empty! Table unable to load!")
+            print(f"{self.csv_name} is empty! Table unable to load!")
 
 
     """
@@ -489,7 +485,7 @@ class ExpandableText(QWidget):
     """
     def save_csv(self):
         if self.saved_data is not None:
-            if not self.saved_data.empty:
+            if not self.saved_data.is_empty():
                 file_dialog = QFileDialog()
                 file_dialog.setAcceptMode(QFileDialog.AcceptSave)
                 file_path, _ = file_dialog.getSaveFileName(self, "Save Selected Data", "", "CSV Files (*.csv)")
@@ -616,7 +612,7 @@ class DataFrameViewer(QWidget):
                 self.new_tab_widget.tabCloseRequested.connect(self.tabCloseRequested)
 
             # Ensure dataframe is not empty before creating splitter item
-            if not dataframe.empty:
+            if not dataframe.is_empty():
                 new_name = tab_name + '-' + str(self.incr)
                 ExpandableText(dataframe, new_name, self.new_tab_widget,
                                index, self.table_split, self.model_dict,

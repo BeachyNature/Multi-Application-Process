@@ -1,6 +1,6 @@
 import os
 import sys
-import pandas as pd
+import polars as pl
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
@@ -99,13 +99,14 @@ class FileDialog(QWidget):
         self.progress_bar.setVisible(True)
 
         try:
-            df = pd.read_csv(file_path)
+            q = pl.scan_csv(file_path)
+            df = q.collect()
             self.label.setText(f"Processing {file_path}")
         except UnicodeDecodeError:
-            df = pd.DataFrame()
+            df = pl.DataFrame()
             self.label.setText(f"Error decoding file {file_path}.")
         except Exception as e:
-            df = pd.DataFrame()
+            df = pl.DataFrame()
             self.label.setText(f"An error occurred while processing {file_path}: {e}")
         self.create_table(df, csv_name, idx)
 

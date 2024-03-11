@@ -24,12 +24,19 @@ class SearchThread(QThread):
         self.col_num = col_num
         self.table = table
 
+
+    """
+    Recieve index values of the searched data
+    """
     def run(self):
         index_values = self.search_text_in_dataframe(self.dataframe, self.col_num)
         self.search_finished.emit(index_values)
 
+
+    """
+    Store the QModelIndex objects corresponding to the matched rows in dataframe
+    """
     def search_text_in_dataframe(self, result, col_num):
-        # Store the QModelIndex objects corresponding to the matched rows in dataframe
         index_values = result.index.tolist()
         for i in range(0, len(index_values)):
             self.highlighted_cells.append(self.table.index(index_values[i], col_num))
@@ -160,7 +167,7 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     def get_dataframe(self):
         visible_columns = [col for col, checkbox in self.column_checkboxes.items() if checkbox.isChecked()]
-        return pd.DataFrame(self._dataframe[visible_columns])
+        return pl.DataFrame(self._dataframe[visible_columns])
 
 
     """
@@ -187,7 +194,6 @@ class DataFrameTableModel(QAbstractTableModel):
     Update the searched results by highlighting specific columns
     """
     def update_search_text(self):
-        
         valid_operators = {
             '>': operator.gt,
             '<': operator.lt,
@@ -313,7 +319,7 @@ class ExpandableText(QWidget):
             options_layout.addWidget(checkbox)
 
         # Apply widgets
-        button_layout.addWidget(self.check_button, alignment=Qt.AlignTop)
+        button_layout.addWidget(self.check_button)
         button_layout.addWidget(self.options_widget)
         layout.addLayout(button_layout)
         layout.addStretch()
@@ -335,19 +341,19 @@ class ExpandableText(QWidget):
     Register the drop event and handle the new data 
     """
     def dropEvent(self, event: QDropEvent):
-        mime_data = event.mimeData()
-
         # Retrieve the file URLs from the mime data
+        mime_data = event.mimeData()
         urls = mime_data.urls()
 
         # Process each file URL
         for url in urls:
             file_path = url.toLocalFile()
-            drag_data = pd.read_csv(file_path)
+            drag_data = pl.scan_csv(file_path)
+            df = drag_data.collect()
             csv_name = os.path.basename(file_path).rstrip('.csv')
 
             # Create a new instance with the new data
-            new_instance = ExpandableText(drag_data, csv_name, self.tab_widget, None,
+            new_instance = ExpandableText(df, csv_name, self.tab_widget, None,
                                         self.table_split, self.model_dict,
                                         self.table_dict, self.csv_button)
 
@@ -378,7 +384,6 @@ class ExpandableText(QWidget):
             checkbox.setVisible(self.is_expanded)
             checkbox.stateChanged.connect(self.setup_data)
             column_checkboxes[column] = checkbox
-
         return column_checkboxes
     
 
@@ -387,7 +392,7 @@ class ExpandableText(QWidget):
     """
     def toggle_expansion(self):
         self.is_expanded = not self.is_expanded
-        self.check_button.setText(self.csv_name + " -" if self.is_expanded else  self.csv_name + " +")
+        self.check_button.setText(self.csv_name + " -" if self.is_expanded else self.csv_name + " +")
 
         for i in range(self.options_widget.layout().count()):
             option_widget = self.options_widget.layout().itemAt(i).widget()
@@ -459,40 +464,40 @@ class ExpandableText(QWidget):
     """
     Get the data for the user to select and save to CSV
     """
-    def update_view(self, selected, deselected):
+    def update_view(self) -> pl.DataFrame:
         selected_data = {}
 
-        for tab_name, table_widget in self.table_dict.items():
+        for table_widget in self.table_dict.values():
             model = self.model_dict[table_widget]
             for index in table_widget.selectionModel().selectedIndexes():
                 row = index.row()
                 col = index.column()
                 header = model.headerData(col, Qt.Horizontal)
-                selected_data[header] = selected_data.get(header, []) + [model._dataframe.iloc[row, col]]
-        self.saved_data = pd.DataFrame(selected_data)
+                selected_data[header] = selected_data.get(header, []) + [model._dataframe[row, col]]
+        self.saved_data = pl.DataFrame(selected_data)
 
 
     """
     Clear Selection when user changes tabs
     """
-    def on_tab_changed(self):
-        for tab_name, table_widget in self.table_dict.items():
+    def on_tab_changed(self) -> None:
+        for table_widget in self.table_dict.values():
             table_widget.selectionModel().clear()
+        return
 
 
     """
     Save CSV based on what user selected in table
     """
-    def save_csv(self):
+    def save_csv(self) -> None:
         if self.saved_data is not None:
             if not self.saved_data.is_empty():
                 file_dialog = QFileDialog()
                 file_dialog.setAcceptMode(QFileDialog.AcceptSave)
                 file_path, _ = file_dialog.getSaveFileName(self, "Save Selected Data", "", "CSV Files (*.csv)")
-                if file_path:
-                    self.saved_data.to_csv(file_path, index=False)
-                    print("Selected Data saved to:", file_path)
-                return 
+                self.saved_data.write_csv(file_path)
+                print("Selected Data saved to:", file_path)
+        return 
 
 
 """
@@ -533,7 +538,6 @@ class DataFrameViewer(QWidget):
         search_bar = QLineEdit()
         search_bar.returnPressed.connect(self.search_tables)
         search_bar.setPlaceholderText("Search...")
-        self.search_text = search_bar.text()
         self.all_table = QCheckBox("Search All Tables")
 
         # Buttons
@@ -551,9 +555,9 @@ class DataFrameViewer(QWidget):
 
         # Configure layouts
         scroll_widget.setLayout(labels_layout)
-        scroll_area.setFixedWidth(500)
         scroll_area.setWidget(scroll_widget)
         scroll_area.setWidgetResizable(True)
+        scroll_area.setFixedWidth(500)
 
         # Create Splitter 
         self.table_split.addWidget(self.tab_widget)
@@ -575,28 +579,26 @@ class DataFrameViewer(QWidget):
         self.tab_widget.setMovable(True)
         self.tab_widget.setTabsClosable(True)
         self.tab_widget.tabBarDoubleClicked.connect(self.load_table_double_click)
+        self.tab_widget.tabCloseRequested.connect(self.maintabCloseRequested)
     
 
     """
     Get the current dataframe of the modified table, hidden columns and all
     """
-    def get_current_tab_dataframe(self):
+    def get_current_tab_dataframe(self) -> pl.DataFrame:
         current_index = self.tab_widget.currentIndex()
         if current_index != -1:
             current_tab = self.tab_widget.widget(current_index)
             if isinstance(current_tab, QTableView):
                 model = current_tab.model()
-                if model:
-                    return model.get_dataframe()
-        return pd.DataFrame()  # Return an empty DataFrame if no data is available
+            return model.get_dataframe()
+        return pl.DataFrame()  # Return an empty DataFrame if no data is available
 
 
     """
     This allows for the user to double click on the tab and be able to compare a tab on the side
     """
-    def load_table_double_click(self, index):
-
-        # Remove the tab that you want to switch over
+    def load_table_double_click(self, index) -> None:
         if self.tab_widget.count() > 1:
             tab_name = self.tab_widget.tabText(index)
             self._bool = True
@@ -619,23 +621,32 @@ class DataFrameViewer(QWidget):
                                self.table_dict, self.csv_button)
             else:
                 print("Cannot Compare, dataframe is empty!")
-    
-            # Remove tab that user wants to compare
-            self.tab_widget.removeTab(index)
-
+        return
 
     """
     Make all tabs after the first one closable
     """
-    def tabCloseRequested(self, index):
+    def tabCloseRequested(self) -> None:
         if self.tab_widget.count() > 1:
             self.table_split.widget(1).setParent(None)
+        return
+
+
+    """
+    Main tab widget closable
+    """
+    def maintabCloseRequested(self, index) -> None:
+        # Allows for a new instance of key to be added
+        del_tab = self.tab_widget.tabText(index)
+        if self.table_dict.get(del_tab) : del self.table_dict[del_tab]
+        self.tab_widget.removeTab(index)
+        return
 
 
     """
     User can type a string here and search all the loaded tables to highlight them
     """
-    def search_tables(self):
+    def search_tables(self) -> None:
         self.search_text = self.sender().text()
 
         def run_search(tab):
@@ -660,7 +671,7 @@ class DataFrameViewer(QWidget):
     """
     Load the search results into the results window
     """
-    def load_search_results(self):
+    def load_search_results(self) -> None:
 
         # Add to layout to tab
         self.tab_dict = {}

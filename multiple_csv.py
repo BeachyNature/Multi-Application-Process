@@ -101,7 +101,13 @@ class FileDialog(QWidget):
         try:
             q = pl.scan_csv(file_path)
             df = q.collect()
+
+            # Create an index column if one does not exist
+            if 'Index' not in df.columns:
+                df = pl.DataFrame({'Index': range(df.height)}).hstack(df)
+            
             self.label.setText(f"Processing {file_path}")
+    
         except UnicodeDecodeError:
             df = pl.DataFrame()
             self.label.setText(f"Error decoding file {file_path}.")

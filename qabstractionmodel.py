@@ -37,7 +37,7 @@ class SearchThread(QThread):
     Store the QModelIndex objects corresponding to the matched rows in dataframe
     """
     def search_text_in_dataframe(self, result, col_num):
-        index_values = result.index.tolist()
+        index_values = result['Index'].to_list()
         for i in range(0, len(index_values)):
             self.highlighted_cells.append(self.table.index(index_values[i], col_num))
         return self.highlighted_cells
@@ -208,15 +208,15 @@ class DataFrameTableModel(QAbstractTableModel):
             if len(parts) > 1: # Check if conditional
                 val = parts[0].rstrip()
                 condition = parts[1].lstrip()
-                col_num = self._dataframe.columns.get_loc(val)
+                col_num = self._dataframe.get_column_index(val)
 
                 # Check if value is a digit or not for better searching
                 if condition.isdigit():
                     for op in valid_operators:
                         if op in self.text:
-                            self.result = self._dataframe.iloc[:self.visible_rows].query(f"{val}{op}{condition}")
+                            self.result = self.match_conditional(val, op, condition)
                 else:
-                    self.result = self._dataframe.iloc[:self.visible_rows].query(f"{val} == '{condition}'")
+                    self.result = self._dataframe[:self.visible_rows].filter(val == condition)
                 self._bool = True
 
             # Start the search thread
@@ -231,6 +231,24 @@ class DataFrameTableModel(QAbstractTableModel):
         #         self._bool = False
 
         return
+
+
+    """
+    Match case conditionals for filtering data
+    """
+    def match_conditional(self, val, op, condition) -> pl.DataFrame:
+        match op:
+            case '>':
+                return self._dataframe[:self.visible_rows].filter(val > condition)
+            case '<':
+                return self._dataframe[:self.visible_rows].filter(val < condition)
+            case '!=':
+                return self._dataframe[:self.visible_rows].filter(val != condition)
+            case '=':
+                return self._dataframe[:self.visible_rows].filter(val == condition)
+            case _ :
+                print("Unable to process operator! ")
+                return pl.DataFrame()
 
 
     """

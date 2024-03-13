@@ -38,8 +38,8 @@ class SearchThread(QThread):
     """
     def search_text_in_dataframe(self, result, col_num):
         index_values = result['Index'].to_list()
-        for i in range(0, len(index_values)):
-            self.highlighted_cells.append(self.table.index(index_values[i], col_num))
+        for i in range(len(index_values)):
+            self.highlighted_cells.append(self.table.index(index_values[i]-1, col_num))
         return self.highlighted_cells
     
 
@@ -70,10 +70,8 @@ class DataFrameTableModel(QAbstractTableModel):
     Row counter that factors in batch size loading
     """
     def rowCount(self, parent=None):
-        # if self._bool: # TODO: Use with checkbox
-        #     return min(self.visible_rows, len(self.highlighted_cells))
-        # elif not self._bool:
-            return min(self.visible_rows, len(self._dataframe))
+        # TODO: Use with checkbox
+        return min(self.visible_rows, len(self._dataframe))
 
 
     """
@@ -216,7 +214,8 @@ class DataFrameTableModel(QAbstractTableModel):
                         if op in self.text:
                             self.result = self.match_conditional(val, op, condition)
                 else:
-                    self.result = self._dataframe[:self.visible_rows].filter(val == condition)
+                    chunk_df = self._dataframe[:self.visible_rows]
+                    self.result = chunk_df.filter(chunk_df[val].str.contains(condition))
                 self._bool = True
 
             # Start the search thread

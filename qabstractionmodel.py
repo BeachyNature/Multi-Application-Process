@@ -207,14 +207,14 @@ class DataFrameTableModel(QAbstractTableModel):
                 val = parts[0].rstrip()
                 condition = parts[1].lstrip()
                 col_num = self._dataframe.get_column_index(val)
+                chunk_df = self._dataframe[:self.visible_rows]
 
                 # Check if value is a digit or not for better searching
                 if condition.isdigit():
                     for op in valid_operators:
                         if op in self.text:
-                            self.result = self.match_conditional(val, op, condition)
+                            self.result = self.match_conditional(val, op, condition, chunk_df)
                 else:
-                    chunk_df = self._dataframe[:self.visible_rows]
                     self.result = chunk_df.filter(chunk_df[val].str.contains(condition))
                 self._bool = True
 
@@ -235,16 +235,16 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     Match case conditionals for filtering data
     """
-    def match_conditional(self, val, op, condition) -> pl.DataFrame:
+    def match_conditional(self, val, op, condition, chunk_df) -> pl.DataFrame:
         match op:
             case '>':
-                return self._dataframe[:self.visible_rows].filter(val > condition)
+                return chunk_df.filter(chunk_df[val] > condition)
             case '<':
-                return self._dataframe[:self.visible_rows].filter(val < condition)
+                return chunk_df.filter(chunk_df[val] < condition)
             case '!=':
-                return self._dataframe[:self.visible_rows].filter(val != condition)
+                return chunk_df.filter(chunk_df[val] != condition)
             case '=':
-                return self._dataframe[:self.visible_rows].filter(val == condition)
+                return chunk_df.filter(chunk_df[val] == condition)
             case _ :
                 print("Unable to process operator! ")
                 return pl.DataFrame()

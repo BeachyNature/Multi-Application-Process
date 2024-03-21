@@ -100,8 +100,6 @@ class DataFrameTableModel(QAbstractTableModel):
                 if row_counts > 1:
                     return QColor("green")
                 return QColor("yellow")
-
-        # self.layoutChanged.emit()
         return None
 
 

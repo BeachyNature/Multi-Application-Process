@@ -101,14 +101,14 @@ class DataFrameTableModel(QAbstractTableModel):
                     return QColor("green")
                 return QColor("yellow")
 
-        self.layoutChanged.emit()
+        # self.layoutChanged.emit()
         return None
 
 
     """
     Column total from dataframe
     """
-    def columnCount(self, parent=None):
+    def columnCount(self, parent=None) -> int:
         if self.column_checkboxes:
             return len(self.visible_columns)
         else:
@@ -118,7 +118,7 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     Creates the headers for the table
     """
-    def headerData(self, section, orientation, role=Qt.DisplayRole):
+    def headerData(self, section, orientation, role=Qt.DisplayRole) -> None:
         if role == Qt.DisplayRole:
             if orientation == Qt.Horizontal:
                 if self.column_checkboxes:
@@ -134,7 +134,7 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     Update the visible rows counter to load the next amount of rows
     """
-    def update_visible_rows(self):
+    def update_visible_rows(self) -> int:
         self.visible_rows += 500
         self.visible_rows = min(self.visible_rows, len(self._dataframe))
         return self.visible_rows
@@ -143,7 +143,7 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     Get the current dataframe from the table, this also factors in hidden rows
     """
-    def get_dataframe(self):
+    def get_dataframe(self) -> pl.DataFrame:
         visible_columns = [col for col, checkbox in self.column_checkboxes.items() if checkbox.isChecked()]
         return pl.DataFrame(self._dataframe[visible_columns])
 
@@ -151,7 +151,7 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     Get the column name of specific selected column
     """
-    def getColumnName(self, columnIndex):
+    def getColumnName(self, columnIndex) -> None:
         if 0 <= columnIndex < len(self._dataframe.columns):
             return str(self._dataframe.columns[columnIndex])
         return None
@@ -160,18 +160,18 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     Uncheck all the columns that are not being filtered    
     """
-    def uncheck_all_other_columns(self, col_name):
+    def uncheck_all_other_columns(self, col_name) -> None:
         for name, checkbox in self.column_checkboxes.items():
             if name != col_name and self._bool:
                 checkbox.setChecked(False)
             else:
                 checkbox.setChecked(True)
-
+        return
 
     """
     Update the searched results by highlighting specific columns
     """
-    def update_search_text(self):
+    def update_search_text(self) -> None:
         # Check if multi-conditional or not
         if '&' in self.text or ',' in self.text:
             val = re.split(r'[&,]', self.text)
@@ -195,7 +195,8 @@ class DataFrameTableModel(QAbstractTableModel):
         # Define chunk dataframe
         numsDict = {}
         chunk_df = self._dataframe[:self.visible_rows]
-    
+
+        #TODO, Not working when filtering same column multiple times
         for condition in val:
             field, op, value = condition.split()
             col_num = self._dataframe.get_column_index(field)

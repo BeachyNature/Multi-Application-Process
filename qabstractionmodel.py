@@ -1,13 +1,12 @@
 import os
 import re
-import operator
 import pandas as pd
 import polars as pl
 from PyQt5.QtGui import QColor, QDropEvent, QDragEnterEvent
 from PyQt5.QtCore import Qt, QAbstractTableModel, QThread, pyqtSignal
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton,\
                             QLineEdit, QTableView, QCheckBox, QScrollArea,\
-                            QTabWidget, QSplitter, QFileDialog
+                            QTabWidget, QSplitter, QFileDialog, QLabel
 
 
 """
@@ -16,12 +15,11 @@ Searching thread to organize data into QModelIndexes
 class SearchThread(QThread):
     search_finished = pyqtSignal(list)
 
-    def __init__(self, table, result, col_num, visible_rows):
+    def __init__(self, table, result, visible_rows):
         super().__init__()
         self.highlighted_cells = []
         self.visible_rows = visible_rows
         self.dataframe = result
-        self.col_num = col_num
         self.table = table
 
 
@@ -29,18 +27,20 @@ class SearchThread(QThread):
     Recieve index values of the searched data
     """
     def run(self):
-        index_values = self.search_text_in_dataframe(self.dataframe, self.col_num)
+        index_values = self.search_text_in_dataframe(self.dataframe)
         self.search_finished.emit(index_values)
 
 
     """
     Store the QModelIndex objects corresponding to the matched rows in dataframe
     """
-    def search_text_in_dataframe(self, result, col_num):
-        index_values = result['Index'].to_list()
-        for i in range(len(index_values)):
-            self.highlighted_cells.append(self.table.index(index_values[i]-1, col_num))
-        return self.highlighted_cells
+    def search_text_in_dataframe(self, result) -> list:
+        highlighted_cells = (
+            self.table.index(index_value - 1, key)
+            for key, df in result.items()
+            for index_value in df['Index']
+        )
+        return list(highlighted_cells)
     
 
 """
@@ -60,7 +60,7 @@ class DataFrameTableModel(QAbstractTableModel):
         # Dataframe configure/setup
         self.column_checkboxes = column_checkboxes
         self._dataframe = dataframe
-        self.visible_rows = 100
+        self.visible_rows = 500
         
         # Set the visible row count
         self.update_visible_columns()
@@ -91,11 +91,16 @@ class DataFrameTableModel(QAbstractTableModel):
         if role == Qt.DisplayRole:
             if self.column_checkboxes is not None:
                 return str(self._dataframe[index.row(), index.column()])
-
+        
+        # Check if the same row is called more than once
         if role == Qt.BackgroundRole:
             if index in self.highlighted_cells:
+                # Check if more than one occurrence of the same row
+                row_counts = sum(1 for cell_index in self.highlighted_cells if cell_index.row() == index.row())
+                if row_counts > 1:
+                    return QColor("green")
                 return QColor("yellow")
-        
+
         self.layoutChanged.emit()
         return None
 
@@ -127,37 +132,12 @@ class DataFrameTableModel(QAbstractTableModel):
 
 
     """
-    Sets a flag for selectable items
-    """
-    def flags(self, index):
-        return Qt.ItemIsEnabled | Qt.ItemIsSelectable
-
-
-    """
     Update the visible rows counter to load the next amount of rows
     """
     def update_visible_rows(self):
-        self.visible_rows += 100
+        self.visible_rows += 500
         self.visible_rows = min(self.visible_rows, len(self._dataframe))
         return self.visible_rows
-
-
-    """
-    Update the next 100 visible rows
-    """
-    def canFetchMore(self, index):
-        return self.visible_rows < len(self._dataframe)
-
-
-    """
-    This fetches the next 100 rows that need to be loaded in
-    """
-    def fetchMore(self, index):
-        remaining_rows = len(self._dataframe) - self.visible_rows
-        rows_to_fetch = min(100, remaining_rows)
-        self.beginInsertRows(index, self.visible_rows, self.visible_rows + rows_to_fetch - 1)
-        self.visible_rows += rows_to_fetch
-        self.endInsertRows()
     
 
     """
@@ -192,85 +172,60 @@ class DataFrameTableModel(QAbstractTableModel):
     Update the searched results by highlighting specific columns
     """
     def update_search_text(self):
-        valid_operators = {
-            '>': operator.gt,
-            '<': operator.lt,
-            '!=': operator.ne,
-            '=': operator.eq
-        }
+        # Check if multi-conditional or not
+        if '&' in self.text or ',' in self.text:
+            val = re.split(r'[&,]', self.text)
+        else:
+            val = [self.text]
 
-        if self.text: # If search string is avaliable
-            pattern = '|'.join(map(re.escape, valid_operators.keys()))
-            parts = re.split(pattern, self.text, 1)
-
-            if len(parts) > 1: # Check if conditional
-                val = parts[0].rstrip()
-                condition = parts[1].lstrip()
-                col_num = self._dataframe.get_column_index(val)
-                chunk_df = self._dataframe[:self.visible_rows]
-
-                # Check if value is a digit or not for better searching
-                if condition.isdigit():
-                    for op in valid_operators:
-                        if op in self.text:
-                            self.result = self.match_conditional(val, op, condition, chunk_df)
-                else:
-                    self.result = chunk_df.filter(chunk_df[val].str.contains(condition))
-                self._bool = True
-
-            # Start the search thread
-            self.search_thread = SearchThread(self, self.result, col_num, self.visible_rows)
-            self.search_thread.search_finished.connect(self.handle_search_results)
-            self.search_thread.start()
-
-        #     else: # If no conditional is searched or not
-        #         item = str(self._dataframe.iat[row, col])
-        #         if self.text and self.text in item:
-        #             self.highlighted_cells.append(self.index(row, col))
-        #         self._bool = False
-
+        # Newly created dataframe based on conditions
+        result = self.conditional_split(val)
+    
+        # Start the search thread
+        self.search_thread = SearchThread(self, result, self.visible_rows)
+        self.search_thread.search_finished.connect(self.handle_search_results)
+        self.search_thread.start()
         return
 
 
     """
-    Match case conditionals for filtering data
+    Check if multi-conditional or not and setup query call
     """
-    def match_conditional(self, val, op, condition, chunk_df) -> pl.DataFrame:
-        match op:
-            case '>':
-                return chunk_df.filter(chunk_df[val] > condition)
-            case '<':
-                return chunk_df.filter(chunk_df[val] < condition)
-            case '!=':
-                return chunk_df.filter(chunk_df[val] != condition)
-            case '=':
-                return chunk_df.filter(chunk_df[val] == condition)
-            case _ :
-                print("Unable to process operator! ")
-                return pl.DataFrame()
+    def conditional_split(self, val) -> pl.DataFrame:
+        # Define chunk dataframe
+        numsDict = {}
+        chunk_df = self._dataframe[:self.visible_rows]
+    
+        for condition in val:
+            field, op, value = condition.split()
+            col_num = self._dataframe.get_column_index(field)
 
+            # Check if condition is a digit or not for proper processing
+            if value.isdigit():
+                match op:
+                    case '>':
+                        numsDict[col_num] = chunk_df.filter(pl.col(field) > int(value))
+                    case '<':
+                        numsDict[col_num]  = chunk_df.filter(pl.col(field) < int(value))
+                    case '!=':
+                        numsDict[col_num] = chunk_df.filter(pl.col(field) != int(value))
+                    case '=':
+                        numsDict[col_num]  = chunk_df.filter(pl.col(field) == int(value))
+                    case _ :
+                        print("Unable to process operator! ")
+                        return pl.DataFrame()
+            else:
+                numsDict[col_num]  = chunk_df.filter(chunk_df[field].str.contains(value))
+            
+        return numsDict
 
+    
     """
     Apply the newly converted dataframe index values to qmodelindex to be highlighted
     """
     def handle_search_results(self, index_values):
         self.highlighted_cells = index_values
         self.layoutChanged.emit()
-
-
-    """
-    Remove column from table when checked off
-    """
-    def setData(self, index, value, role=Qt.EditRole):
-        if role == Qt.CheckStateRole:
-            if index.isValid():
-                if index in self._selected_indexes:
-                    self._selected_indexes.remove(index)
-                else:
-                    self._selected_indexes.add(index)
-                self.dataChanged.emit(index, index, [role])
-                return True
-        return False
 
 
     """
@@ -419,7 +374,7 @@ class ExpandableText(QWidget):
 
 
     """
-    Tells the model to load the next 100 rows
+    Tells the model to load the next 500 rows
     """
     def load_more_data(self, table, value):
             max_value = table.verticalScrollBar().maximum()
@@ -429,7 +384,7 @@ class ExpandableText(QWidget):
                 return abs(value1 - value2) <= range_limit
         
             if is_within_range(current_value, max_value):
-                if len(self.dataframe) > 100:
+                if len(self.dataframe) > 500:
                     self.model_dict[table].update_visible_rows()
                     self.model_dict[table].update_search_text()
 
@@ -551,23 +506,35 @@ class DataFrameViewer(QWidget):
         self.model_dict = {}
         self.table_dict = {}
 
-        # Search bar and Checkbox
+        # Search bar handler
         search_bar = QLineEdit()
-        search_bar.returnPressed.connect(self.search_tables)
         search_bar.setPlaceholderText("Search...")
+        search_bar.returnPressed.connect(self.search_tables)
+
+        # Label & Checkbox initalizers
+        label_layout = QVBoxLayout()
+        checkbox_layout = QHBoxLayout()
+
+        self.index_label = QLabel("TEST INDEX")
+        self.split_search = QCheckBox("Search Splitter")
         self.all_table = QCheckBox("Search All Tables")
+
+        label_layout.addWidget(self.index_label)
+        checkbox_layout.addLayout(label_layout)
+        checkbox_layout.addWidget(self.split_search)
+        checkbox_layout.addWidget(self.all_table)
+        checkbox_layout.addStretch()
 
         # Buttons
         self.csv_button = QPushButton("Save Data")
-        self.load_search_results_button = QPushButton("Load Search Results")
-        self.load_search_results_button.clicked.connect(self.load_search_results)
-        main_layout.addWidget(self.load_search_results_button)
+        self.results_button = QPushButton("Load Search Results")
+        self.results_button.clicked.connect(self.load_search_results)
 
         # Run the data through the expanded text list
         for csv_name, df in self.data.items():
             text_widget = ExpandableText(df, csv_name, self.tab_widget, None,
-                                         self.table_split, self.model_dict,
-                                         self.table_dict, self.csv_button)
+                                        self.table_split, self.model_dict,
+                                        self.table_dict, self.csv_button)
             labels_layout.addWidget(text_widget)
 
         # Configure layouts
@@ -585,10 +552,10 @@ class DataFrameViewer(QWidget):
         self.main_splitter.setStretchFactor(0, 1)
 
         # Main Layout
-        labels_layout.addWidget(self.csv_button)
-        main_layout.addWidget(search_bar)
-        main_layout.addWidget(self.all_table)
         center_layout.addWidget(self.main_splitter)
+        main_layout.addWidget(self.results_button)
+        main_layout.addWidget(search_bar)
+        main_layout.addLayout(checkbox_layout)
         main_layout.addLayout(center_layout)
         self.setLayout(main_layout)
 
@@ -666,13 +633,18 @@ class DataFrameViewer(QWidget):
     def search_tables(self) -> None:
         self.search_text = self.sender().text()
 
+        """
+        Check if user is search all existing tables or not
+        """
         def run_search(tab):
-            for i in range(len(tab)):
-                index_table = tab.widget(i)
-                if isinstance(index_table, QTableView):
-                    model = index_table.model()
-                    model.text = self.search_text
-                    model.update_search_text()
+            if self.all_table.isChecked():
+                for i in range(len(tab)):
+                    index_table = tab.widget(i)
+                    self.table_model_set(index_table)
+            else:
+                test = tab.currentIndex()
+                index_table = tab.widget(test)
+                self.table_model_set(index_table)
 
         # Run through all the tabs if they exist
         if self.tab_widget:
@@ -680,9 +652,20 @@ class DataFrameViewer(QWidget):
             run_search(value)
    
         # Check if user is searching all split tables
-        if self._bool and self.all_table.isChecked():
+        if self._bool and self.split_search.isChecked():
             value = self.new_tab_widget
             run_search(value)
+        return
+
+
+    """
+    Check if index table is valid before searching
+    """
+    def table_model_set(self, index_table):
+        if isinstance(index_table, QTableView):
+            model = index_table.model()
+            model.text = self.search_text
+            model.update_search_text()
 
 
     """
@@ -701,7 +684,7 @@ class DataFrameViewer(QWidget):
             tab_name = self.tab_widget.tabText(index)
             model = self.tab_widget.widget(index).model()
             data = model.get_result()
-            
+
             # If user is searching with a conditional or not
             if not model._bool:
                 # Use applymap with vectorized string methods to search for the text in each cell
@@ -712,6 +695,7 @@ class DataFrameViewer(QWidget):
                 df = pd.DataFrame({'value': non_nan.values,
                                    'search_index': non_nan.index.get_level_values(0)})
                 data = df.groupby('search_index').agg({'value': list}).reset_index()
+
             else:
                 print(f"Conditional Search processing in {tab_name}...")
 

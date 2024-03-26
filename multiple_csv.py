@@ -57,7 +57,6 @@ class FileDialog(QWidget):
 
         if not self._bool:
             # Configure the file dialog window
-            file_dialog.setDirectory('/Users/tycon/Desktop/Test CSVS')
             file_dialog.setFileMode(QFileDialog.ExistingFiles)
             file_dialog.setNameFilter("CSV files (*.csv)")
             selected_files, _ = file_dialog.getOpenFileNames(self, 'Select CSVs', '')

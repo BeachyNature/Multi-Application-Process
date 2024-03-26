@@ -15,12 +15,13 @@ Searching thread to organize data into QModelIndexes
 class SearchThread(QThread):
     search_finished = pyqtSignal(list)
 
-    def __init__(self, table, result, visible_rows):
+    def __init__(self, table, result, visible_rows, index_label):
         super().__init__()
         self.highlighted_cells = []
         self.visible_rows = visible_rows
         self.dataframe = result
         self.table = table
+        self.index_label = index_label
 
 
     """
@@ -28,6 +29,7 @@ class SearchThread(QThread):
     """
     def run(self):
         index_values = self.search_text_in_dataframe(self.dataframe)
+        self.index_label.setText(f"Found {len(index_values)} items")
         self.search_finished.emit(index_values)
 
 
@@ -42,6 +44,7 @@ class SearchThread(QThread):
         )
         return list(highlighted_cells)
     
+
 
 """
 Created QAbstractionTableModel that each dataframe loaded in utilizes
@@ -69,7 +72,7 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     Row counter that factors in batch size loading
     """
-    def rowCount(self, parent=None):
+    def rowCount(self, parent=None) -> int:
         # TODO: Use with checkbox
         return min(self.visible_rows, len(self._dataframe))
 
@@ -77,11 +80,11 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     Makes columns visible or not
     """
-    def update_visible_columns(self):
+    def update_visible_columns(self) -> None:
         if self.column_checkboxes is not None:
             self.visible_columns = [col for col, checkbox in self.column_checkboxes.items() if checkbox.isChecked()]
-            self.layoutChanged.emit()
-
+            # self.layoutChanged.emit()
+        return
 
     """
     Sets up the table from the dataframes
@@ -169,7 +172,7 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     Update the searched results by highlighting specific columns
     """
-    def update_search_text(self) -> None:
+    def update_search_text(self, index_label) -> None:
         # Check if multi-conditional or not
         if '&' in self.text or ',' in self.text:
             val = re.split(r'[&,]', self.text)
@@ -178,11 +181,12 @@ class DataFrameTableModel(QAbstractTableModel):
 
         # Newly created dataframe based on conditions
         result = self.conditional_split(val)
-    
+
         # Start the search thread
-        self.search_thread = SearchThread(self, result, self.visible_rows)
+        self.search_thread = SearchThread(self, result, self.visible_rows, index_label)
         self.search_thread.search_finished.connect(self.handle_search_results)
         self.search_thread.start()
+    
         return
 
 
@@ -194,28 +198,55 @@ class DataFrameTableModel(QAbstractTableModel):
         numsDict = {}
         chunk_df = self._dataframe[:self.visible_rows]
 
+        # Join the list into a single string separated by a space
+        combined_string = ' '.join(val)
+
         #TODO, Not working when filtering same column multiple times
         for condition in val:
             field, op, value = condition.split()
             col_num = self._dataframe.get_column_index(field)
 
-            # Check if condition is a digit or not for proper processing
-            if value.isdigit():
-                match op:
-                    case '>':
-                        numsDict[col_num] = chunk_df.filter(pl.col(field) > int(value))
-                    case '<':
-                        numsDict[col_num]  = chunk_df.filter(pl.col(field) < int(value))
-                    case '!=':
-                        numsDict[col_num] = chunk_df.filter(pl.col(field) != int(value))
-                    case '=':
-                        numsDict[col_num]  = chunk_df.filter(pl.col(field) == int(value))
-                    case _ :
-                        print("Unable to process operator! ")
-                        return pl.DataFrame()
+            # Count occurrences of the word in the combined string
+            count = combined_string.lower().count(field.lower())
+            print(f"{count = }")
+            if count < 2:
+
+                # Check if condition is a digit or not for proper processing
+                #TODO Fix processing as this works 
+                if value.isdigit():
+                    match op:
+                        case '>':
+                            numsDict[col_num] = chunk_df.filter(pl.col(field) > int(value))
+                        case '<':
+                            numsDict[col_num] = chunk_df.filter(pl.col(field) < int(value))
+                        case '!=':
+                            numsDict[col_num] = chunk_df.filter(pl.col(field) != int(value))
+                        case '=':
+                            numsDict[col_num] = chunk_df.filter(pl.col(field) == int(value))
+                        case _ :
+                            print("Unable to process operator! ")
+                            return pl.DataFrame()
+                else:
+                    numsDict[col_num] = chunk_df.filter(chunk_df[field].str.contains(value))
+                
             else:
-                numsDict[col_num]  = chunk_df.filter(chunk_df[field].str.contains(value))
-            
+                if value.isdigit():
+                        match op:
+                            case '>':
+                                chunk_df = chunk_df.filter(pl.col(field) > int(value))
+                            case '<':
+                                chunk_df = chunk_df.filter(pl.col(field) < int(value))
+                            case '!=':
+                                chunk_df = chunk_df.filter(pl.col(field) != int(value))
+                            case '=':
+                                chunk_df = chunk_df.filter(pl.col(field) == int(value))
+                            case _ :
+                                print("Unable to process operator! ")
+                                return pl.DataFrame()
+                else:
+                    chunk_df = chunk_df.filter(chunk_df[field].str.contains(value))
+                numsDict[col_num] = chunk_df
+        print(f"{numsDict = }")
         return numsDict
 
     
@@ -235,6 +266,7 @@ class DataFrameTableModel(QAbstractTableModel):
             return self.result
         else:
             return self.get_dataframe()
+
 
 
 """
@@ -561,7 +593,7 @@ class DataFrameViewer(QWidget):
         # Tab widget, double click to compare and able to be removed
         self.tab_widget.setMovable(True)
         self.tab_widget.setTabsClosable(True)
-        self.tab_widget.tabBarDoubleClicked.connect(self.load_table_double_click)
+        self.tab_widget.tabBarDoubleClicked.connect(self.load_splitter)
         self.tab_widget.tabCloseRequested.connect(self.maintabCloseRequested)
     
 
@@ -581,29 +613,25 @@ class DataFrameViewer(QWidget):
     """
     This allows for the user to double click on the tab and be able to compare a tab on the side
     """
-    def load_table_double_click(self, index) -> None:
-        if self.tab_widget.count() > 1:
-            tab_name = self.tab_widget.tabText(index)
-            self._bool = True
-            self.incr += 1
+    def load_splitter(self, index) -> None:
+        self._bool = True
 
-            # Create new tab
-            self.new_tab_widget = QTabWidget()
-            self.new_tab_widget.setTabsClosable(True)
-            dataframe = self.get_current_tab_dataframe()
-        
-            # Make it that the user can't remove the last tab
-            if self.new_tab_widget.count() == 0:
-                self.new_tab_widget.tabCloseRequested.connect(self.tabCloseRequested)
+        # Get tab name on widget that needs split
+        tab_name = self.tab_widget.tabText(index)
+    
+        # Create new tab
+        self.new_tab_widget = QTabWidget()
+        dataframe = self.get_current_tab_dataframe()
 
-            # Ensure dataframe is not empty before creating splitter item
-            if not dataframe.is_empty():
-                new_name = tab_name + '-' + str(self.incr)
-                ExpandableText(dataframe, new_name, self.new_tab_widget,
-                               index, self.table_split, self.model_dict,
-                               self.table_dict, self.csv_button)
-            else:
-                print("Cannot Compare, dataframe is empty!")
+        self.new_tab_widget.setTabsClosable(True)
+        self.new_tab_widget.tabCloseRequested.connect(self.tabCloseRequested)
+
+        # Ensure dataframe is not empty before creating splitter item
+        if not dataframe.is_empty():
+            new_name = f"{tab_name} - {index}"
+            ExpandableText(dataframe, new_name, self.new_tab_widget,
+                            index, self.table_split, self.model_dict,
+                            self.table_dict, self.csv_button)
         return
 
     """
@@ -641,8 +669,8 @@ class DataFrameViewer(QWidget):
                     index_table = tab.widget(i)
                     self.table_model_set(index_table)
             else:
-                test = tab.currentIndex()
-                index_table = tab.widget(test)
+                current_tab = tab.currentIndex()
+                index_table = tab.widget(current_tab)
                 self.table_model_set(index_table)
 
         # Run through all the tabs if they exist
@@ -654,8 +682,6 @@ class DataFrameViewer(QWidget):
         if self._bool and self.split_search.isChecked():
             value = self.new_tab_widget
             run_search(value)
-        return
-
 
     """
     Check if index table is valid before searching
@@ -664,7 +690,9 @@ class DataFrameViewer(QWidget):
         if isinstance(index_table, QTableView):
             model = index_table.model()
             model.text = self.search_text
-            model.update_search_text()
+            model.update_search_text(self.index_label)
+        return model
+        
 
 
     """

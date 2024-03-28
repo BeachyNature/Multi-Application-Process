@@ -83,7 +83,7 @@ class DataFrameTableModel(QAbstractTableModel):
     def update_visible_columns(self) -> None:
         if self.column_checkboxes is not None:
             self.visible_columns = [col for col, checkbox in self.column_checkboxes.items() if checkbox.isChecked()]
-            # self.layoutChanged.emit()
+            self.layoutChanged.emit()
         return
 
     """
@@ -198,55 +198,27 @@ class DataFrameTableModel(QAbstractTableModel):
         numsDict = {}
         chunk_df = self._dataframe[:self.visible_rows]
 
-        # Join the list into a single string separated by a space
-        combined_string = ' '.join(val)
-
         #TODO, Not working when filtering same column multiple times
         for condition in val:
             field, op, value = condition.split()
             col_num = self._dataframe.get_column_index(field)
 
-            # Count occurrences of the word in the combined string
-            count = combined_string.lower().count(field.lower())
-            print(f"{count = }")
-            if count < 2:
-
-                # Check if condition is a digit or not for proper processing
-                #TODO Fix processing as this works 
-                if value.isdigit():
+            if value.isdigit():
                     match op:
                         case '>':
-                            numsDict[col_num] = chunk_df.filter(pl.col(field) > int(value))
+                            chunk_df = chunk_df.filter(pl.col(field) > int(value))
                         case '<':
-                            numsDict[col_num] = chunk_df.filter(pl.col(field) < int(value))
+                            chunk_df = chunk_df.filter(pl.col(field) < int(value))
                         case '!=':
-                            numsDict[col_num] = chunk_df.filter(pl.col(field) != int(value))
+                            chunk_df = chunk_df.filter(pl.col(field) != int(value))
                         case '=':
-                            numsDict[col_num] = chunk_df.filter(pl.col(field) == int(value))
+                            chunk_df = chunk_df.filter(pl.col(field) == int(value))
                         case _ :
                             print("Unable to process operator! ")
                             return pl.DataFrame()
-                else:
-                    numsDict[col_num] = chunk_df.filter(chunk_df[field].str.contains(value))
-                
             else:
-                if value.isdigit():
-                        match op:
-                            case '>':
-                                chunk_df = chunk_df.filter(pl.col(field) > int(value))
-                            case '<':
-                                chunk_df = chunk_df.filter(pl.col(field) < int(value))
-                            case '!=':
-                                chunk_df = chunk_df.filter(pl.col(field) != int(value))
-                            case '=':
-                                chunk_df = chunk_df.filter(pl.col(field) == int(value))
-                            case _ :
-                                print("Unable to process operator! ")
-                                return pl.DataFrame()
-                else:
-                    chunk_df = chunk_df.filter(chunk_df[field].str.contains(value))
-                numsDict[col_num] = chunk_df
-        print(f"{numsDict = }")
+                chunk_df = chunk_df.filter(chunk_df[field].str.contains(value))
+            numsDict[col_num] = chunk_df
         return numsDict
 
     

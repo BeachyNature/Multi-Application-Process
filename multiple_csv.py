@@ -4,6 +4,7 @@ import polars as pl
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
+from sqlalchemy import create_engine, MetaData
 
 import qabstractionmodel
 
@@ -58,16 +59,19 @@ class FileDialog(QWidget):
         if not self._bool:
             # Configure the file dialog window
             file_dialog.setFileMode(QFileDialog.ExistingFiles)
-            file_dialog.setNameFilter("CSV files (*.csv)")
-            selected_files, _ = file_dialog.getOpenFileNames(self, 'Select CSVs', '')
+            file_dialog.setNameFilter("CSV files (*.csv); SQLite database files (*.db)")
+            selected_files, _ = file_dialog.getOpenFileNames(self, 'Select Datafiles', '')
+            total_files = len(selected_files)
 
             # Check if user selected a csv, then convert to dataframe
             if selected_files:
-                total_files = len(selected_files)
                 for idx, file_path in enumerate (selected_files):
                     file_name = os.path.basename(file_path)
-                    csv_name = file_name.rstrip('.csv')
-                    self.process_csvs(file_path, csv_name, idx)
+                    if file_name.endswith('.csv'):
+                        csv_name = file_name.rstrip('.csv')
+                        self.process_csvs(file_path, csv_name, idx)
+                    elif file_name.endswith('.db'):
+                        self.process_db(file_path, idx)
                     self.progress_status(idx, total_files)
         
         elif self._bool: # Select a directory to process all CSV's inside
@@ -75,7 +79,6 @@ class FileDialog(QWidget):
     
             if directory:
                 csv_files = [file for file in os.listdir(directory) if file.endswith(".csv")]
-                total_files = len(csv_files)
                 for idx, csv_name in  enumerate (csv_files):
                     if csv_name.endswith(".csv"):
                         file_path = os.path.join(directory, csv_name)
@@ -99,11 +102,8 @@ class FileDialog(QWidget):
 
         try:
             q = pl.scan_csv(file_path)
-            df = q.collect()
-
-            # Create an index column if one does not exist
-            if 'Index' not in df.columns:
-                df = pl.DataFrame({'Index': range(df.height)}).hstack(df)
+            data = q.collect()
+            df = self.add_index(data)
             
             self.label.setText(f"Processing {file_path}")
     
@@ -113,13 +113,39 @@ class FileDialog(QWidget):
         except Exception as e:
             df = pl.DataFrame()
             self.label.setText(f"An error occurred while processing {file_path}: {e}")
-        self.create_table(df, csv_name, idx)
+        self.create_table(df, csv_name)
+
+
+    """
+    Process SQL Lite database files
+    """
+    def process_db(self, file_path, idx):
+
+        # Create a SQLAlchemy engine to connect to the SQLite database
+        engine = create_engine(f"sqlite:///{file_path}")
+
+        # Reflect database schema to MetaData
+        metadata = MetaData()
+        metadata.reflect(bind=engine)
+
+        # Extract table names
+        table_names = metadata.tables.keys()
+
+        for table_name in table_names:
+            data = pl.read_database(
+                query=f"SELECT * FROM {table_name}",
+                connection=engine
+                # schema_overrides={"normalised_score": pl.UInt8},
+            )
+
+            df = self.add_index(data)
+            self.create_table(df, table_name)
 
 
     """
     Load the dataframes into seperate table that creates tabs for each item
     """
-    def create_table(self, df, csv_name, idx):
+    def create_table(self, df, csv_name):
         self.dict[csv_name] = df  
 
 
@@ -145,7 +171,18 @@ class FileDialog(QWidget):
         progress_value = int((idx + 1) / total_files * 100)
         self.progress_bar.setValue(progress_value)
 
+    
+    """
+    Add index column if it does not exist
+    """
+    def add_index(self, data) -> pl.DataFrame:
+        if 'Index' not in data.columns:
+            df = pl.DataFrame({'Index': range(data.height)}).hstack(data)
+        else:
+            return
+        return df
 
+    
 # THIS IS FOR TESTING
 if __name__ == '__main__':
     app = QApplication(sys.argv)

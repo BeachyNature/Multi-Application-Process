@@ -1,10 +1,9 @@
 import os
 import sys
 import polars as pl
-from PyQt5.QtWidgets import *
-from PyQt5.QtGui import *
-from PyQt5.QtCore import *
 from sqlalchemy import create_engine, MetaData
+from PyQt5.QtWidgets import QPushButton, QVBoxLayout, QCheckBox, QProgressBar,\
+                            QLabel, QFileDialog, QDialog, QApplication, QWidget, QTabWidget
 
 import qabstractionmodel
 
@@ -60,6 +59,7 @@ class FileDialog(QWidget):
             # Configure the file dialog window
             file_dialog.setFileMode(QFileDialog.ExistingFiles)
             file_dialog.setNameFilter("CSV files (*.csv); SQLite database files (*.db)")
+    
             selected_files, _ = file_dialog.getOpenFileNames(self, 'Select Datafiles', '')
             total_files = len(selected_files)
 
@@ -76,9 +76,11 @@ class FileDialog(QWidget):
         
         elif self._bool: # Select a directory to process all CSV's inside
             directory = QFileDialog.getExistingDirectory(None, "Select a directory", ".", QFileDialog.ShowDirsOnly)
-    
+
             if directory:
                 csv_files = [file for file in os.listdir(directory) if file.endswith(".csv")]
+                total_files = len(csv_files)
+    
                 for idx, csv_name in  enumerate (csv_files):
                     if csv_name.endswith(".csv"):
                         file_path = os.path.join(directory, csv_name)
@@ -88,8 +90,6 @@ class FileDialog(QWidget):
         # Run the QAbstractionTable with the loaded CSVs
         self.table_model = qabstractionmodel.DataFrameViewer(self.dict)
         self.table_model.show()
-
-        # TEST for comment documentation
         # print(self.create_table.__doc__)
 
 
@@ -179,7 +179,7 @@ class FileDialog(QWidget):
         if 'Index' not in data.columns:
             df = pl.DataFrame({'Index': range(data.height)}).hstack(data)
         else:
-            return
+            return data
         return df
 
     

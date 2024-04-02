@@ -69,9 +69,9 @@ class FileDialog(QWidget):
                     file_name = os.path.basename(file_path)
                     if file_name.endswith('.csv'):
                         csv_name = file_name.rstrip('.csv')
-                        self.process_csvs(file_path, csv_name, idx)
+                        self.process_csvs(file_path, csv_name)
                     elif file_name.endswith('.db'):
-                        self.process_db(file_path, idx)
+                        self.process_db(file_path)
                     self.progress_status(idx, total_files)
         
         elif self._bool: # Select a directory to process all CSV's inside
@@ -84,7 +84,7 @@ class FileDialog(QWidget):
                 for idx, csv_name in  enumerate (csv_files):
                     if csv_name.endswith(".csv"):
                         file_path = os.path.join(directory, csv_name)
-                        self.process_csvs(file_path, csv_name, idx)
+                        self.process_csvs(file_path, csv_name)
                         self.progress_status(idx, total_files)
         
         # Run the QAbstractionTable with the loaded CSVs
@@ -96,7 +96,7 @@ class FileDialog(QWidget):
     """
     Processes the CSVS into dataframes
     """
-    def process_csvs(self, file_path, csv_name, idx):
+    def process_csvs(self, file_path, csv_name):
         # Make the progress bar visible
         self.progress_bar.setVisible(True)
 
@@ -119,7 +119,7 @@ class FileDialog(QWidget):
     """
     Process SQL Lite database files
     """
-    def process_db(self, file_path, idx):
+    def process_db(self, file_path):
 
         # Create a SQLAlchemy engine to connect to the SQLite database
         engine = create_engine(f"sqlite:///{file_path}")
@@ -148,14 +148,6 @@ class FileDialog(QWidget):
     def create_table(self, df, csv_name):
         self.dict[csv_name] = df  
 
-
-    """
-    Run the main dialog window
-    """
-    def run_dialog(self):
-        dialog = QDialog()
-        dialog.setLayout(self.layout)
-        dialog.exec()
 
     """
     If the user has the run all checkbox selected, it will process all CSVS found in a folder

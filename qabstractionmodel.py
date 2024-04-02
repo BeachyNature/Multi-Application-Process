@@ -2,11 +2,12 @@ import os
 import re
 import pandas as pd
 import polars as pl
+from sqlalchemy import create_engine, MetaData
 from PyQt5.QtGui import QColor, QDropEvent, QDragEnterEvent
 from PyQt5.QtCore import Qt, QAbstractTableModel, QThread, pyqtSignal
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton,\
                             QLineEdit, QTableView, QCheckBox, QScrollArea,\
-                            QTabWidget, QSplitter, QFileDialog, QLabel
+                            QTabWidget, QSplitter, QFileDialog, QLabel, QDialog
 
 
 """
@@ -296,6 +297,7 @@ class ExpandableText(QWidget):
         # Apply widgets
         button_layout.addWidget(self.check_button)
         button_layout.addWidget(self.options_widget)
+        # button_layout.addWidget(self.csv_button) # TODO add to bottom of vertical bar
         layout.addLayout(button_layout)
         layout.addStretch()
         layout.update()
@@ -303,12 +305,13 @@ class ExpandableText(QWidget):
 
 
     """
-    Enable drag and drop event for CSV
+    Enable drag and drop event for CSV and DB files
     """
     def dragEnterEvent(self, event: QDragEnterEvent):
         mime_data = event.mimeData()
         if mime_data.hasUrls():
-            if all(url.toLocalFile().lower().endswith('.csv') for url in mime_data.urls()):
+            urls = [url.toLocalFile().lower() for url in mime_data.urls()]
+            if all(url.endswith(('.csv', '.db')) for url in urls):
                 event.acceptProposedAction()
 
 
@@ -323,31 +326,90 @@ class ExpandableText(QWidget):
         # Process each file URL
         for url in urls:
             file_path = url.toLocalFile()
-            drag_data = pl.scan_csv(file_path)
-            df = drag_data.collect()
-            csv_name = os.path.basename(file_path).rstrip('.csv')
+            file_name = os.path.basename(file_path)
 
-            # Create a new instance with the new data
-            new_instance = ExpandableText(df, csv_name, self.tab_widget, None,
-                                        self.table_split, self.model_dict,
-                                        self.table_dict, self.csv_button)
+            if file_name.endswith(".csv"):
+                drag_data = pl.scan_csv(file_path)
+                df = drag_data.collect()
+                table_name = os.path.basename(file_path).rstrip('.csv')
+                self.add_dragged_file(df, table_name)
 
-            # Find the existing vertical layout in the current layout
-            existing_vertical_layout = None
-            for i in range(self.layout().count()):
-                item = self.layout().itemAt(i)
-                if item and isinstance(item.layout(), QVBoxLayout):
-                    existing_vertical_layout = item.layout()
-                    break
+            elif file_path.endswith(".db"):
+                engine = create_engine(f"sqlite:///{file_path}")
 
-            # If there is an existing vertical layout, add the new instance to it
-            if existing_vertical_layout:
-                existing_vertical_layout.addWidget(new_instance)
-        
+                # Reflect database schema to MetaData
+                metadata = MetaData()
+                metadata.reflect(bind=engine)
+
+                # Extract table names
+                self.table_names = list(metadata.tables.keys())
+
+                dialog = QDialog()
+                layout = QVBoxLayout()
+
+                # Process database tables
+                load_db_button = QPushButton("Load Tables")
+                load_db_button.clicked.connect(lambda: self.load_db_table(engine, dialog))
+                
+                for table_name in self.table_names:
+                    check_button = QCheckBox(table_name)
+                    check_button.setChecked(True)
+                    
+                    check_button.stateChanged.connect(self.handle_checkbox)
+                    layout.addWidget(check_button)
+                
+                layout.addWidget(load_db_button)
+                dialog.setLayout(layout)
+                dialog.exec_()
+  
         # Accept action to add new csv
         event.acceptProposedAction()
 
 
+    """
+    Load user selected files
+    """
+    def load_db_table(self, engine, dialog):
+        for table_name in self.table_names:
+            df = pl.read_database(
+                    query=f"SELECT * FROM {table_name}",
+                    connection=engine)
+            self.add_dragged_file(df, table_name)
+        dialog.close()
+
+
+    """
+    Handle what tables user wants to load in
+    """
+    def handle_checkbox(self, state) -> None:
+        sender = self.sender()
+        if state == 0:
+            self.table_names.remove(sender.text())
+        else:
+             self.table_names.append(sender.text())
+
+
+    """
+    Return dragged items
+    """
+    def add_dragged_file(self, df, table_name):
+        # Create a new instance with the new data
+        new_instance = ExpandableText(df, table_name, self.tab_widget, None,
+                                    self.table_split, self.model_dict,
+                                    self.table_dict, self.csv_button)
+                    
+        # Find the existing vertical layout in the current layout
+        for i in range(self.layout().count()):
+            item = self.layout().itemAt(i)
+            if item and isinstance(item.layout(), QVBoxLayout):
+                existing_vertical_layout = item.layout()
+                break
+
+        # If there is an existing vertical layout, add the new instance to it
+        if existing_vertical_layout:
+            existing_vertical_layout.addWidget(new_instance)
+
+    
     """
     Create the checkboxes that allows for user to toggle columns in dataframe table
     """

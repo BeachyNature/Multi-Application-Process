@@ -1,5 +1,6 @@
 import os
 import re
+import itertools
 import pandas as pd
 import polars as pl
 from sqlalchemy import create_engine, MetaData
@@ -16,34 +17,38 @@ Searching thread to organize data into QModelIndexes
 class SearchThread(QThread):
     search_finished = pyqtSignal(list)
 
-    def __init__(self, table, result, visible_rows, index_label):
+    def __init__(self, table, data_dict, visible_rows):
         super().__init__()
         self.highlighted_cells = []
         self.visible_rows = visible_rows
-        self.dataframe = result
+        self.data_dict = data_dict
         self.table = table
-        self.index_label = index_label
 
 
     """
     Recieve index values of the searched data
     """
     def run(self):
-        index_values = self.search_text_in_dataframe(self.dataframe)
-        self.index_label.setText(f"Found {len(index_values)} items")
+        index_values = self.search_text_in_dataframe()
         self.search_finished.emit(index_values)
 
 
     """
     Store the QModelIndex objects corresponding to the matched rows in dataframe
     """
-    def search_text_in_dataframe(self, result) -> list:
-        highlighted_cells = (
-            self.table.index(index_value - 1, key)
-            for key, df in result.items()
-            for index_value in df['Index']
-        )
-        return list(highlighted_cells)
+    def search_text_in_dataframe(self) -> list:
+        for key, value in (
+            itertools.chain.from_iterable(
+                (itertools.product((k,), v) for k, v in self.data_dict.items()))):
+                    self.highlighted_cells.append(self.table.index(key, value))
+
+        return self.highlighted_cells
+        # highlighted_cells = (
+        #     self.table.index(index_value - 1, key)
+        #     for key, df in result.items()
+        #     for index_value in df['Index']
+        # )
+        # return list(highlighted_cells)
     
 
 
@@ -100,9 +105,9 @@ class DataFrameTableModel(QAbstractTableModel):
         if role == Qt.BackgroundRole:
             if index in self.highlighted_cells:
                 # Check if more than one occurrence of the same row
-                row_counts = sum(1 for cell_index in self.highlighted_cells if cell_index.row() == index.row())
-                if row_counts > 1:
-                    return QColor("green")
+                # row_counts = sum(1 for cell_index in self.highlighted_cells if cell_index.row() == index.row())
+                # if row_counts > 1:
+                #     return QColor("green")
                 return QColor("yellow")
         return None
 
@@ -173,18 +178,13 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     Update the searched results by highlighting specific columns
     """
-    def update_search_text(self, index_label) -> None:
-        # Check if multi-conditional or not
-        if '&' in self.text or ',' in self.text:
-            val = re.split(r'[&,]', self.text)
-        else:
-            val = [self.text]
+    def update_search_text(self) -> None:
 
         # Newly created dataframe based on conditions
-        result = self.conditional_split(val)
-
+        data_dict = self.conditional_split()
+    
         # Start the search thread
-        self.search_thread = SearchThread(self, result, self.visible_rows, index_label)
+        self.search_thread = SearchThread(self, data_dict, self.visible_rows)
         self.search_thread.search_finished.connect(self.handle_search_results)
         self.search_thread.start()
     
@@ -194,33 +194,72 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     Check if multi-conditional or not and setup query call
     """
-    def conditional_split(self, val) -> pl.DataFrame:
+    def conditional_split(self) -> pl.DataFrame:
+        
+        columns = []
+        data_dict = {}
+        combined_filter = None
+
         # Define chunk dataframe
-        numsDict = {}
-        chunk_df = self._dataframe[:self.visible_rows]
+        df = self._dataframe[:self.visible_rows]
 
-        #TODO, Not working when filtering same column multiple times
-        for condition in val:
-            field, op, value = condition.split()
-            col_num = self._dataframe.get_column_index(field)
+        # Split the input string into individual conditions
+        condition_sets = re.split(r'(?:and|&|,)', self.text)
 
-            if value.isdigit():
-                    match op:
-                        case '>':
-                            chunk_df = chunk_df.filter(pl.col(field) > int(value))
-                        case '<':
-                            chunk_df = chunk_df.filter(pl.col(field) < int(value))
-                        case '!=':
-                            chunk_df = chunk_df.filter(pl.col(field) != int(value))
+        # Define regular expression patterns for splitting
+        pattern_condition = r'\s*([^\s=><!]+)\s*([=><!]+)\s*([^\s=><!]+)\s*'
+
+        # Process each condition set
+        for val in condition_sets:
+            matches = re.findall(pattern_condition, val)
+
+            for match in matches:
+                column = match[0].strip()
+                operator = match[1].strip()
+                value = match[2].strip()   
+     
+                columns.append(df.get_column_index(column))
+
+                # Build filter expression for the current condition
+                if value.isdigit():
+                    match operator:
                         case '=':
-                            chunk_df = chunk_df.filter(pl.col(field) == int(value))
+                            filter_expr = pl.col(column) == int(value)
+                        case '>':
+                            filter_expr = pl.col(column) > int(value)
+                        case '<':
+                            filter_expr = pl.col(column) < int(value)
+                        case '!=':
+                            filter_expr = pl.col(column) != int(value)
                         case _ :
-                            print("Unable to process operator! ")
-                            return pl.DataFrame()
-            else:
-                chunk_df = chunk_df.filter(chunk_df[field].str.contains(value))
-            numsDict[col_num] = chunk_df
-        return numsDict
+                            print(f"Invalid operator: {operator}")
+                else:
+                    match operator:
+                        case '=': 
+                            filter_expr = pl.col(column) == value
+                        case '!=':
+                            filter_expr = pl.col(column) != value
+                        case _ :
+                            print(f"Invalid operator: {operator}")
+
+                # Combine filter expressions based on 'and' or 'or' logic
+                if 'or' in val:
+                    combined_filter = filter_expr if combined_filter is None else combined_filter | filter_expr
+                else:
+                    combined_filter = filter_expr if combined_filter is None else combined_filter & filter_expr
+
+        # Display the filtered DataFrame
+        if combined_filter is not None:
+            df = df.filter(combined_filter)
+
+            rows = df['Index'].to_list()
+            for row, col in itertools.product(rows, columns):
+                if row in data_dict:
+                    data_dict[row].append(col)
+                else:
+                    data_dict[row] = [col]
+    
+        return data_dict
 
     
     """
@@ -724,7 +763,7 @@ class DataFrameViewer(QWidget):
         if isinstance(index_table, QTableView):
             model = index_table.model()
             model.text = self.search_text
-            model.update_search_text(self.index_label)
+            model.update_search_text()
         return model
         
 

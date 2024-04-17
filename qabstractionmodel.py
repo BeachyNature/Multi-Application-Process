@@ -40,16 +40,8 @@ class SearchThread(QThread):
         for key, value in (
             itertools.chain.from_iterable(
                 (itertools.product((k,), v) for k, v in self.data_dict.items()))):
-                    self.highlighted_cells.append(self.table.index(key, value))
-
+                    self.highlighted_cells.append(self.table.index(key-1, value)) # Due to how current csv works
         return self.highlighted_cells
-        # highlighted_cells = (
-        #     self.table.index(index_value - 1, key)
-        #     for key, df in result.items()
-        #     for index_value in df['Index']
-        # )
-        # return list(highlighted_cells)
-    
 
 
 """
@@ -181,7 +173,7 @@ class DataFrameTableModel(QAbstractTableModel):
     def update_search_text(self) -> None:
 
         # Newly created dataframe based on conditions
-        data_dict = self.conditional_split()
+        data_dict = self.conditional_split(data_dict={})
     
         # Start the search thread
         self.search_thread = SearchThread(self, data_dict, self.visible_rows)
@@ -192,21 +184,55 @@ class DataFrameTableModel(QAbstractTableModel):
 
 
     """
+    Fill in the data dictionary with row indexes and column index for each found item
+    """
+    def index_row(self, df, column, data_dict) -> dict:
+        rows = df['Index'].to_list()
+        for row in rows:
+            col = df.get_column_index(column)
+            if row in data_dict:
+                data_dict[row].append(col)
+            else:
+                data_dict[row] = [col]
+        return data_dict
+
+
+    """
+    Filter the text to make a dynamic dataframe expression
+    """
+    def filter_values(self, val, df, filter_expr, 
+                      column, data_dict, combined_filter) -> dict:
+        # Combine filter expressions based on 'and' or 'or' logic
+        if 'or' in val:
+            combined_filter = filter_expr if combined_filter is None else combined_filter | filter_expr
+        else:
+            combined_filter = filter_expr if combined_filter is None else combined_filter & filter_expr
+
+        if "(" in self.text:
+            print("COOL -----------------")
+            df = df.filter(filter_expr)
+            data_dict = self.index_row(df, column, data_dict)
+
+            print(f"{df = }")
+            print(f"{data_dict = }")
+        else:
+            print("EPIC -----------------")
+            df = df.filter(combined_filter)
+            data_dict = self.index_row(df, column, data_dict)
+        return data_dict
+
+    """
     Check if multi-conditional or not and setup query call
     """
-    def conditional_split(self) -> pl.DataFrame:
-        
-        columns = []
+    def conditional_split(self, data_dict) -> pl.DataFrame:
+    
         data_dict = {}
-        combined_filter = None
 
         # Define chunk dataframe
         df = self._dataframe[:self.visible_rows]
 
-        # Split the input string into individual conditions
+        # Split the input string into individual conditions and patterns
         condition_sets = re.split(r'(?:and|&|,)', self.text)
-
-        # Define regular expression patterns for splitting
         pattern_condition = r'\s*([^\s=><!]+)\s*([=><!]+)\s*([^\s=><!]+)\s*'
 
         # Process each condition set
@@ -214,13 +240,10 @@ class DataFrameTableModel(QAbstractTableModel):
             matches = re.findall(pattern_condition, val)
 
             for match in matches:
-                column = match[0].strip()
-                operator = match[1].strip()
-                value = match[2].strip()   
-     
-                columns.append(df.get_column_index(column))
+                column = re.sub(r"\(|\)", "", match[0].strip())
+                operator = re.sub(r"\(|\)", "", match[1].strip())
+                value = re.sub(r"\(|\)", "", match[2].strip())
 
-                # Build filter expression for the current condition
                 if value.isdigit():
                     match operator:
                         case '=':
@@ -241,24 +264,8 @@ class DataFrameTableModel(QAbstractTableModel):
                             filter_expr = pl.col(column) != value
                         case _ :
                             print(f"Invalid operator: {operator}")
-
-                # Combine filter expressions based on 'and' or 'or' logic
-                if 'or' in val:
-                    combined_filter = filter_expr if combined_filter is None else combined_filter | filter_expr
-                else:
-                    combined_filter = filter_expr if combined_filter is None else combined_filter & filter_expr
-
-        # Display the filtered DataFrame
-        if combined_filter is not None:
-            df = df.filter(combined_filter)
-
-            rows = df['Index'].to_list()
-            for row, col in itertools.product(rows, columns):
-                if row in data_dict:
-                    data_dict[row].append(col)
-                else:
-                    data_dict[row] = [col]
-    
+                data_dict = self.filter_values(val, df, filter_expr, column,
+                                                data_dict, combined_filter = None)
         return data_dict
 
     

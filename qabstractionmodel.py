@@ -198,35 +198,11 @@ class DataFrameTableModel(QAbstractTableModel):
 
 
     """
-    Filter the text to make a dynamic dataframe expression
-    """
-    def filter_values(self, val, df, filter_expr, 
-                      column, data_dict, combined_filter) -> dict:
-        # Combine filter expressions based on 'and' or 'or' logic
-        if 'or' in val:
-            combined_filter = filter_expr if combined_filter is None else combined_filter | filter_expr
-        else:
-            combined_filter = filter_expr if combined_filter is None else combined_filter & filter_expr
-
-        if "(" in self.text:
-            print("COOL -----------------")
-            df = df.filter(filter_expr)
-            data_dict = self.index_row(df, column, data_dict)
-
-            print(f"{df = }")
-            print(f"{data_dict = }")
-        else:
-            print("EPIC -----------------")
-            df = df.filter(combined_filter)
-            data_dict = self.index_row(df, column, data_dict)
-        return data_dict
-
-    """
     Check if multi-conditional or not and setup query call
     """
     def conditional_split(self, data_dict) -> pl.DataFrame:
-    
-        data_dict = {}
+        
+        combined_filter = None
 
         # Define chunk dataframe
         df = self._dataframe[:self.visible_rows]
@@ -264,8 +240,20 @@ class DataFrameTableModel(QAbstractTableModel):
                             filter_expr = pl.col(column) != value
                         case _ :
                             print(f"Invalid operator: {operator}")
-                data_dict = self.filter_values(val, df, filter_expr, column,
-                                                data_dict, combined_filter = None)
+                # Combine filter expressions based on 'and' or 'or' logic
+                if 'or' in val:
+                    combined_filter = filter_expr if combined_filter is None else combined_filter | filter_expr
+                else:
+                    combined_filter = filter_expr if combined_filter is None else combined_filter & filter_expr
+                
+                if "(" in self.text:
+                    df = df.filter(filter_expr)
+                    data_dict = self.index_row(df, column, data_dict)
+
+        if "(" not in self.text:
+            df = df.filter(combined_filter)
+            data_dict = self.index_row(df, column, data_dict)
+    
         return data_dict
 
     

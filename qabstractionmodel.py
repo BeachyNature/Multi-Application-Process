@@ -171,90 +171,144 @@ class DataFrameTableModel(QAbstractTableModel):
     Update the searched results by highlighting specific columns
     """
     def update_search_text(self) -> None:
-
+        data_dict = {}
+        combined_filter = None
+    
         # Newly created dataframe based on conditions
-        data_dict = self.conditional_split(data_dict={})
+        if re.search(r'[()]', self.text) is not None:
+            value = re.findall(r'\((.*?)\)', self.text)
+        
+        # Values outside of parentheses
+        value = re.findall(r'\([^()]*\)|[^()]+', self.text)
+        print(f"{value = }")
+
+        for val in value:
+            data_dict = self.match_bool(val, data_dict, combined_filter) 
+            print(f"{data_dict = }")
     
         # Start the search thread
         self.search_thread = SearchThread(self, data_dict, self.visible_rows)
         self.search_thread.search_finished.connect(self.handle_search_results)
         self.search_thread.start()
-    
+
         return
 
 
     """
     Fill in the data dictionary with row indexes and column index for each found item
     """
-    def index_row(self, df, column, data_dict) -> dict:
+    def index_row(self, df, columns, data_dict) -> dict:
         rows = df['Index'].to_list()
+        cols = df.get_column_index(columns)
+    
         for row in rows:
-            col = df.get_column_index(column)
             if row in data_dict:
-                data_dict[row].append(col)
+                data_dict[row].append(cols)
             else:
-                data_dict[row] = [col]
+                data_dict[row] = [cols]
         return data_dict
 
 
     """
-    Check if multi-conditional or not and setup query call
+    Dynamically setup the expressions
     """
-    def conditional_split(self, data_dict) -> pl.DataFrame:
-        
-        combined_filter = None
+    def dynamic_expr(self, operator, value, column, filter_expr) -> filter:
+        if value.isdigit():
+            match operator:
+                case '=':
+                    filter_expr = pl.col(column) == int(value)
+                case '>':
+                    filter_expr = pl.col(column) > int(value)
+                case '<':
+                    filter_expr = pl.col(column) < int(value)
+                case '>=':
+                    filter_expr = pl.col(column) >= int(value)
+                case '<=':
+                    filter_expr = pl.col(column) <= int(value)
+                case '!=':
+                    filter_expr = pl.col(column) != int(value)
+                case _ :
+                    print(f"Invalid operator: {operator}")
+        else:
+            match operator:
+                case '=': 
+                    filter_expr = pl.col(column) == value
+                case '!=':
+                    filter_expr = pl.col(column) != value
+                case _ :
+                    print(f"Invalid operator: {operator}")
+        return filter_expr
 
-        # Define chunk dataframe
+
+    """
+    Process dataframe and index rows
+    """
+    def process_filter(self, df, col, data_dict, combined_filter):
+        df = df.filter(combined_filter)
+        data_dict = self.index_row(df, col, data_dict)
+        return data_dict
+
+
+    """
+    Split the conditions up into sets and combine back together
+    """
+    def condition_set(self, init_val, df, condition, pattern,
+                    combined_filter, data_dict, _bool) -> dict:
+        print("NICE", condition)
+
+        for cond_set in condition:
+            matches = re.findall(pattern, cond_set)
+            for match in matches:
+                col = re.sub(r"\(|\)", "", match[0].strip())
+                op = re.sub(r"\(|\)", "", match[1].strip())
+                val = re.sub(r"\(|\)", "", match[2].strip())
+            filter_expr = self.dynamic_expr(op, val, col, None)
+
+            if _bool:
+                combined_filter = filter_expr if combined_filter is None else combined_filter | filter_expr
+            else:
+                combined_filter = filter_expr if combined_filter is None else combined_filter & filter_expr
+
+            if re.search(r'[()]', init_val) is not None:
+                data_dict = self.process_filter(df, col, data_dict, combined_filter)
+
+        data_dict = self.process_filter(df, col, data_dict, combined_filter)
+        return data_dict
+
+
+    """
+    Detect whether the condition is split between and/or condition or none
+    """
+    def match_bool(self, val, data_dict, combined_filter) -> dict:
+        # Chunked Dataframe
         df = self._dataframe[:self.visible_rows]
 
-        # Split the input string into individual conditions and patterns
-        condition_sets = re.split(r'(?:and|&|,)', self.text)
-        pattern_condition = r'\s*([^\s=><!]+)\s*([=><!]+)\s*([^\s=><!]+)\s*'
+        # Split based on boolean conditional
+        pattern = r'\s*([^\s=><!]+)\s*([=><!]+)\s*([^\s=><!]+)\s*'
 
-        # Process each condition set
-        for val in condition_sets:
-            matches = re.findall(pattern_condition, val)
+        if 'and' in val:
+            print("NICE")
+            condition = re.split(r'(?:and|&|,)', val)
+            data_dict =  self.condition_set(val, df, condition, pattern,
+                                    combined_filter, data_dict, False)
+            return data_dict
 
-            for match in matches:
-                column = re.sub(r"\(|\)", "", match[0].strip())
-                operator = re.sub(r"\(|\)", "", match[1].strip())
-                value = re.sub(r"\(|\)", "", match[2].strip())
+        elif 'or' in val:
+            print("EPIC")
+            condition = re.split(r'\bor\b', val)
+            data_dict =  self.condition_set(val, df, condition, pattern,
+                                    combined_filter, data_dict, True)
+            return data_dict
+        else:
+            print("COOL")
+            col, op, val = map(str.strip, val.split())
+            filter_expr = self.dynamic_expr(op, val, col, None)
 
-                if value.isdigit():
-                    match operator:
-                        case '=':
-                            filter_expr = pl.col(column) == int(value)
-                        case '>':
-                            filter_expr = pl.col(column) > int(value)
-                        case '<':
-                            filter_expr = pl.col(column) < int(value)
-                        case '!=':
-                            filter_expr = pl.col(column) != int(value)
-                        case _ :
-                            print(f"Invalid operator: {operator}")
-                else:
-                    match operator:
-                        case '=': 
-                            filter_expr = pl.col(column) == value
-                        case '!=':
-                            filter_expr = pl.col(column) != value
-                        case _ :
-                            print(f"Invalid operator: {operator}")
-                # Combine filter expressions based on 'and' or 'or' logic
-                if 'or' in val:
-                    combined_filter = filter_expr if combined_filter is None else combined_filter | filter_expr
-                else:
-                    combined_filter = filter_expr if combined_filter is None else combined_filter & filter_expr
-                
-                if "(" in self.text:
-                    df = df.filter(filter_expr)
-                    data_dict = self.index_row(df, column, data_dict)
-
-        if "(" not in self.text:
-            df = df.filter(combined_filter)
-            data_dict = self.index_row(df, column, data_dict)
-    
-        return data_dict
+        if filter_expr is not None:
+            df = df.filter(filter_expr)
+            data_dict = self.index_row(df, col, data_dict)
+            return data_dict
+        return
 
     
     """

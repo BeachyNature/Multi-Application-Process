@@ -254,7 +254,6 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     def condition_set(self, init_val, df, condition, pattern,
                     combined_filter, data_dict, _bool) -> dict:
-        print("NICE", condition)
 
         for cond_set in condition:
             matches = re.findall(pattern, cond_set)
@@ -287,20 +286,17 @@ class DataFrameTableModel(QAbstractTableModel):
         pattern = r'\s*([^\s=><!]+)\s*([=><!]+)\s*([^\s=><!]+)\s*'
 
         if 'and' in val:
-            print("NICE")
             condition = re.split(r'(?:and|&|,)', val)
             data_dict =  self.condition_set(val, df, condition, pattern,
                                     combined_filter, data_dict, False)
             return data_dict
 
         elif 'or' in val:
-            print("EPIC")
             condition = re.split(r'\bor\b', val)
             data_dict =  self.condition_set(val, df, condition, pattern,
                                     combined_filter, data_dict, True)
             return data_dict
         else:
-            print("COOL")
             col, op, val = map(str.strip, val.split())
             filter_expr = self.dynamic_expr(op, val, col, None)
 

@@ -30,6 +30,7 @@ class SearchThread(QThread):
     """
     def run(self):
         index_values = self.search_text_in_dataframe()
+        # print(f"{len(index_values) = }")
         self.search_finished.emit(index_values)
 
 
@@ -103,6 +104,14 @@ class DataFrameTableModel(QAbstractTableModel):
                 return QColor("yellow")
         return None
 
+    """
+    Number of found items
+    """
+    def num_found(self):
+        if self.highlighted_cells:
+            print(f"{len(self.highlighted_cells) = }")
+            return len(self.highlighted_cells)
+        print("HELLO?")
 
     """
     Column total from dataframe
@@ -785,21 +794,24 @@ class DataFrameViewer(QWidget):
             if self.all_table.isChecked():
                 for i in range(len(tab)):
                     index_table = tab.widget(i)
-                    self.table_model_set(index_table)
+                    return self.table_model_set(index_table)
             else:
                 current_tab = tab.currentIndex()
                 index_table = tab.widget(current_tab)
-                self.table_model_set(index_table)
+                return self.table_model_set(index_table)
 
         # Run through all the tabs if they exist
         if self.tab_widget:
-            value = self.tab_widget
-            run_search(value)
+            model = run_search(self.tab_widget)
+            test = model.num_found()
+            print(f'{test = }')
+   
    
         # Check if user is searching all split tables
         if self._bool and self.split_search.isChecked():
-            value = self.new_tab_widget
-            run_search(value)
+            run_search(self.new_tab_widget)
+
+        return
 
     """
     Check if index table is valid before searching

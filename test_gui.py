@@ -66,16 +66,12 @@ class MainWindow(QMainWindow):
         self.side_panel = SidePanel()
         self.plot_widget = PlotWidget()
 
-        self.setCentralWidget(QWidget())
-        self.centralWidget().setLayout(QHBoxLayout())
-        self.centralWidget().layout().addWidget(self.side_panel)
-
-        # Create a layout for the plot widget
-        plot_layout = QVBoxLayout()
-        plot_layout.addWidget(self.plot_widget)
-
-        # Add the plot layout to the central widget layout with a stretch factor
-        self.centralWidget().layout().addLayout(plot_layout, stretch=1)
+        # Create a container widget for the side panel and plot widget
+        central_container = QWidget()
+        central_layout = QHBoxLayout(central_container)
+        central_layout.addWidget(self.side_panel)
+        central_layout.addWidget(self.plot_widget)
+        self.setCentralWidget(central_container)
 
         self.menu_button = QPushButton()
         self.menu_button.setStyleSheet(
@@ -99,6 +95,7 @@ class MainWindow(QMainWindow):
         self.toolbar.addWidget(self.menu_button)
 
         self.setWindowTitle("Main Window")
+
 
 
     def resizeEvent(self, event):

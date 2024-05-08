@@ -29,9 +29,10 @@ class SearchThread(QThread):
     """
     Recieve index values of the searched data
     """
-    def run(self):
+    def run(self) -> None:
         index_values = self.search_text_in_dataframe()
         self.search_finished.emit(index_values)
+        return
 
 
     """
@@ -174,7 +175,10 @@ class DataFrameTableModel(QAbstractTableModel):
     def update_search_text(self) -> int:
         data_dict = {}
         combined_filter = None
-    
+        
+        # Chunked Dataframe
+        self.result = self._dataframe[:self.visible_rows]
+
         # Newly created dataframe based on conditions
         if re.search(r'[()]', self.text) is not None:
             value = re.findall(r'\((.*?)\)', self.text)
@@ -183,8 +187,7 @@ class DataFrameTableModel(QAbstractTableModel):
         value = re.findall(r'\([^()]*\)|[^()]+', self.text)
     
         for val in value:
-            data_dict = self.match_bool(val, data_dict, combined_filter) 
-        found_items = len(data_dict)
+            data_dict, found_items = self.match_bool(val, data_dict, combined_filter) 
 
         # Start the search thread
         self.search_thread = SearchThread(self, data_dict, self.visible_rows)
@@ -196,9 +199,9 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     Fill in the data dictionary with row indexes and column index for each found item
     """
-    def index_row(self, df, columns, data_dict) -> dict:
-        rows = df['Index'].to_list()
-        cols = df.get_column_index(columns)
+    def index_row(self, columns, data_dict) -> dict:
+        rows = self.result['Index'].to_list()
+        cols = self.result.get_column_index(columns)
     
         for row in rows:
             if row in data_dict:
@@ -242,16 +245,16 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     Process dataframe and index rows
     """
-    def process_filter(self, df, col, data_dict, combined_filter):
-        df = df.filter(combined_filter)
-        data_dict = self.index_row(df, col, data_dict)
+    def process_filter(self, col, data_dict, combined_filter):
+        self.result = self.result.filter(combined_filter)
+        data_dict = self.index_row(col, data_dict)
         return data_dict
 
 
     """
     Split the conditions up into sets and combine back together
     """
-    def condition_set(self, init_val, df, condition, pattern,
+    def condition_set(self, init_val, condition, pattern,
                     combined_filter, data_dict, _bool) -> dict:
 
         for cond_set in condition:
@@ -268,44 +271,53 @@ class DataFrameTableModel(QAbstractTableModel):
                 combined_filter = filter_expr if combined_filter is None else combined_filter & filter_expr
 
             if re.search(r'[()]', init_val) is not None:
-                data_dict = self.process_filter(df, col, data_dict, combined_filter)
+                data_dict = self.process_filter(col, data_dict, combined_filter)
 
-        data_dict = self.process_filter(df, col, data_dict, combined_filter)
-        return data_dict
+        data_dict = self.process_filter(col, data_dict, combined_filter)
+        total_items = self.found_items(combined_filter)
+        return data_dict, total_items
 
 
     """
     Detect whether the condition is split between and/or condition or none
     """
     def match_bool(self, val, data_dict, combined_filter) -> dict:
-        # Chunked Dataframe
-        df = self._dataframe[:self.visible_rows]
 
         # Split based on boolean conditional
         pattern = r'\s*([^\s=><!]+)\s*([=><!]+)\s*([^\s=><!]+)\s*'
 
         if 'and' in val:
             condition = re.split(r'(?:and|&|,)', val)
-            data_dict =  self.condition_set(val, df, condition, pattern,
-                                    combined_filter, data_dict, False)
-            return data_dict
+            return self.condition_set(val, condition, pattern,
+                                      combined_filter, data_dict, False)
 
         elif 'or' in val:
             condition = re.split(r'\bor\b', val)
-            data_dict =  self.condition_set(val, df, condition, pattern,
-                                    combined_filter, data_dict, True)
-            return data_dict
+            return self.condition_set(val, condition, pattern,
+                                      combined_filter, data_dict, True)
+
         else:
             col, op, val = map(str.strip, val.split())
             filter_expr = self.dynamic_expr(op, val, col, None)
 
+        # If there is no AND / OR statement
         if filter_expr is not None:
-            df = df.filter(filter_expr)
-            data_dict = self.index_row(df, col, data_dict)
-            return data_dict
+            self.result = self.result.filter(filter_expr)
+            total_items = self.found_items(filter_expr)
+            
+            # Fill in data dict of indexes
+            data_dict = self.index_row(col, data_dict)
+            return data_dict, total_items
         return
 
-    
+
+    """
+    Get total found items to fill in the index label
+    """
+    def found_items(self, dynam_expr):
+        return len(self._dataframe.filter(dynam_expr))
+
+
     """
     Apply the newly converted dataframe index values to qmodelindex to be highlighted
     """
@@ -317,11 +329,8 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     Populate the results window
     """
-    def get_result(self):
-        if self._bool:
-            return self.result
-        else:
-            return self.get_dataframe()
+    def get_result(self) -> pl.DataFrame:
+        return self.result
 
 
 
@@ -635,8 +644,11 @@ class DataFrameViewer(QWidget):
     """
     Setup the main window display
     """
-    def init_ui(self):
-
+    def init_ui(self) -> None:
+        
+        # Windiow Size
+        self.resize(1920, 1080)
+    
         # Setup Layouts
         main_layout = QVBoxLayout()
         labels_layout = QVBoxLayout()
@@ -664,7 +676,7 @@ class DataFrameViewer(QWidget):
         label_layout = QVBoxLayout()
         checkbox_layout = QHBoxLayout()
 
-        self.index_label = QLabel("TEST INDEX")
+        self.index_label = QLabel("")
         self.split_search = QCheckBox("Search Splitter")
         self.all_table = QCheckBox("Search All Tables")
 
@@ -713,7 +725,8 @@ class DataFrameViewer(QWidget):
         self.tab_widget.setTabsClosable(True)
         self.tab_widget.tabBarDoubleClicked.connect(self.load_splitter)
         self.tab_widget.tabCloseRequested.connect(self.maintabCloseRequested)
-    
+        return
+
 
     """
     Get the current dataframe of the modified table, hidden columns and all
@@ -725,7 +738,7 @@ class DataFrameViewer(QWidget):
             if isinstance(current_tab, QTableView):
                 model = current_tab.model()
             return model.get_dataframe()
-        return pl.DataFrame()  # Return an empty DataFrame if no data is available
+        return pl.DataFrame()
 
 
     """
@@ -766,13 +779,11 @@ class DataFrameViewer(QWidget):
     """
     def maintabCloseRequested(self, index) -> None:
         # Allows for a new instance of key to be added
-        print(f"{self.label_dict = }")
-
         del_tab = self.tab_widget.tabText(index)
         if self.table_dict.get(del_tab):
             del self.table_dict[del_tab]
             del self.label_dict[index]
-        print(f"{self.label_dict = }")
+
         self.tab_widget.removeTab(index)
         return
 
@@ -834,7 +845,6 @@ class DataFrameViewer(QWidget):
 
         # Update dictionary based on index
         curr_index = self.tab_widget.currentIndex()
-        
     
         # Update Label and indexing
         if len(self.label_dict) > 1:
@@ -861,39 +871,42 @@ class DataFrameViewer(QWidget):
             model = self.tab_widget.widget(index).model()
             data = model.get_result()
 
-            # If user is searching with a conditional or not
-            if not model._bool:
-                # Use applymap with vectorized string methods to search for the text in each cell
-                search_result = data[data.apply(lambda col: col.map(lambda x: str(x).lower().find(self.search_text.lower()) != -1))]
+            # # If user is searching with a conditional or not
+            # if not model._bool:
+            #     # Use applymap with vectorized string methods to search for the text in each cell
+            #     search_result = data[data.apply(lambda col: col.map(lambda x: str(x).lower().find(self.search_text.lower()) != -1))]
             
-                # Get all non-NaN values and create a new DataFrame with original indices and a column indicating where the item is found
-                non_nan = search_result.stack().dropna()
-                df = pd.DataFrame({'value': non_nan.values,
-                                   'search_index': non_nan.index.get_level_values(0)})
-                data = df.groupby('search_index').agg({'value': list}).reset_index()
+            #     # Get all non-NaN values and create a new DataFrame with original indices and a column indicating where the item is found
+            #     non_nan = search_result.stack().dropna()
+            #     df = pd.DataFrame({'value': non_nan.values,
+            #                        'search_index': non_nan.index.get_level_values(0)})
+            #     data = df.groupby('search_index').agg({'value': list}).reset_index()
 
-            else:
-                print(f"Conditional Search processing in {tab_name}...")
+            # else:
+            #     print(f"Conditional Search processing in {tab_name}...")
 
-            # Create a new QAbstractTableModel for search results
-            self.search_results_model = DataFrameTableModel(data, None)
-            self.search_results_table = QTableView()
-            self.search_results_table.setModel(self.search_results_model)
+
+            # Make table model and apply
+            model = DataFrameTableModel(data, None)
+            
+            print(f"{data = }")
+            self.results_table = QTableView()
+            self.results_table.setModel(model)
 
             # Formatters
-            self.search_results_table.verticalHeader().setVisible(False)
+            self.results_table.verticalHeader().setVisible(False)
 
             # Add new tab
             find_items_layout.addWidget(self.result_tab)
-            self.result_tab.addTab(self.search_results_table, tab_name)
+            self.result_tab.addTab(self.results_table, tab_name)
 
             # Signal Callers
-            self.search_results_table.setSelectionBehavior(QTableView.SelectRows)
-            self.search_results_table.selectionModel().selectionChanged.connect(self.on_clicked)
+            self.results_table.setSelectionBehavior(QTableView.SelectRows)
+            self.results_table.selectionModel().selectionChanged.connect(self.on_clicked)
 
             # Defined model and data
             if self.tab_widget.tabText(index) not in self.tab_dict:
-                self.tab_dict[tab_name] = [index, self.search_results_table]
+                self.tab_dict[tab_name] = [index, self.results_table]
             else:
                 return
         

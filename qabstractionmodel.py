@@ -184,10 +184,10 @@ class DataFrameTableModel(QAbstractTableModel):
         value = re.findall(r'\([^()]*\)|[^()]+', self.text)
     
         for val in value:
-            data_dict, found_items = self.match_bool(val, data_dict, combined_filter) 
+            self.index_dict, found_items = self.match_bool(val, data_dict, combined_filter) 
 
         # Start the search thread
-        self.search_thread = SearchThread(self, data_dict, self.visible_rows)
+        self.search_thread = SearchThread(self, self.index_dict, self.visible_rows)
         self.search_thread.search_finished.connect(self.handle_search_results)
         self.search_thread.start()
         return found_items
@@ -330,8 +330,9 @@ class DataFrameTableModel(QAbstractTableModel):
     Populate the results window
     """
     def get_result(self) -> pl.DataFrame:
-        return self.result
-
+        # Loop through dictionary keys and return corresponding rows
+        combined_df = pl.concat([self._dataframe[key-1] for key in self.index_dict])
+        return combined_df
 
 
 """

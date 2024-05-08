@@ -89,7 +89,7 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     Sets up the table from the dataframes
     """
-    def data(self, index, role=Qt.DisplayRole):
+    def data(self, index, role=Qt.DisplayRole) -> None:
 
         if role == Qt.DisplayRole:
             if self.column_checkboxes is not None:
@@ -175,9 +175,6 @@ class DataFrameTableModel(QAbstractTableModel):
     def update_search_text(self) -> int:
         data_dict = {}
         combined_filter = None
-        
-        # Chunked Dataframe
-        self.result = self._dataframe[:self.visible_rows]
 
         # Newly created dataframe based on conditions
         if re.search(r'[()]', self.text) is not None:
@@ -199,9 +196,9 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     Fill in the data dictionary with row indexes and column index for each found item
     """
-    def index_row(self, columns, data_dict) -> dict:
-        rows = self.result['Index'].to_list()
-        cols = self.result.get_column_index(columns)
+    def index_row(self, df, columns, data_dict) -> dict:
+        rows = df['Index'].to_list()
+        cols = df.get_column_index(columns)
     
         for row in rows:
             if row in data_dict:
@@ -245,17 +242,17 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     Process dataframe and index rows
     """
-    def process_filter(self, col, data_dict, combined_filter):
-        self.result = self.result.filter(combined_filter)
-        data_dict = self.index_row(col, data_dict)
+    def process_filter(self, df, col, data_dict, combined_filter):
+        df = df.filter(combined_filter)
+        data_dict = self.index_row(df, col, data_dict)
         return data_dict
 
 
     """
     Split the conditions up into sets and combine back together
     """
-    def condition_set(self, init_val, condition, pattern,
-                    combined_filter, data_dict, _bool) -> dict:
+    def condition_set(self, init_val, df, condition, pattern,
+                      combined_filter, data_dict, _bool) -> dict:
 
         for cond_set in condition:
             matches = re.findall(pattern, cond_set)
@@ -271,9 +268,9 @@ class DataFrameTableModel(QAbstractTableModel):
                 combined_filter = filter_expr if combined_filter is None else combined_filter & filter_expr
 
             if re.search(r'[()]', init_val) is not None:
-                data_dict = self.process_filter(col, data_dict, combined_filter)
+                data_dict = self.process_filter(df, col, data_dict, combined_filter)
 
-        data_dict = self.process_filter(col, data_dict, combined_filter)
+        data_dict = self.process_filter(df, col, data_dict, combined_filter)
         total_items = self.found_items(combined_filter)
         return data_dict, total_items
 
@@ -283,17 +280,20 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     def match_bool(self, val, data_dict, combined_filter) -> dict:
 
+        # Chunked Dataframe
+        df = self._dataframe[:self.visible_rows]
+
         # Split based on boolean conditional
         pattern = r'\s*([^\s=><!]+)\s*([=><!]+)\s*([^\s=><!]+)\s*'
 
         if 'and' in val:
             condition = re.split(r'(?:and|&|,)', val)
-            return self.condition_set(val, condition, pattern,
+            return self.condition_set(val, df, condition, pattern,
                                       combined_filter, data_dict, False)
 
         elif 'or' in val:
             condition = re.split(r'\bor\b', val)
-            return self.condition_set(val, condition, pattern,
+            return self.condition_set(val, df, condition, pattern,
                                       combined_filter, data_dict, True)
 
         else:
@@ -302,11 +302,11 @@ class DataFrameTableModel(QAbstractTableModel):
 
         # If there is no AND / OR statement
         if filter_expr is not None:
-            self.result = self.result.filter(filter_expr)
+            df = df.filter(filter_expr)
             total_items = self.found_items(filter_expr)
             
             # Fill in data dict of indexes
-            data_dict = self.index_row(col, data_dict)
+            data_dict = self.index_row(df, col, data_dict)
             return data_dict, total_items
         return
 
@@ -574,7 +574,6 @@ class ExpandableText(QWidget):
                         self.table_split.widget(1).addTab(table, self.csv_name)
 
                 # Signal Callers
-                self.tab_widget.currentChanged.connect(self.on_tab_changed)
                 table.selectionModel().selectionChanged.connect(self.update_view)
                 table.verticalScrollBar().valueChanged.connect(lambda value, table=table: self.load_more_data(table, value))
                 self.check_status(model)
@@ -604,15 +603,6 @@ class ExpandableText(QWidget):
                 header = model.headerData(col, Qt.Horizontal)
                 selected_data[header] = selected_data.get(header, []) + [model._dataframe[row, col]]
         self.saved_data = pl.DataFrame(selected_data)
-
-
-    """
-    Clear Selection when user changes tabs
-    """
-    def on_tab_changed(self) -> None:
-        for table_widget in self.table_dict.values():
-            table_widget.selectionModel().clear()
-        return
 
 
     """
@@ -723,11 +713,12 @@ class DataFrameViewer(QWidget):
         # Tab widget, double click to compare and able to be removed
         self.tab_widget.setMovable(True)
         self.tab_widget.setTabsClosable(True)
+        self.tab_widget.currentChanged.connect(self.update_label)
         self.tab_widget.tabBarDoubleClicked.connect(self.load_splitter)
         self.tab_widget.tabCloseRequested.connect(self.maintabCloseRequested)
         return
 
-
+        
     """
     Get the current dataframe of the modified table, hidden columns and all
     """
@@ -840,19 +831,29 @@ class DataFrameViewer(QWidget):
         index = self.tab_widget.indexOf(index_table)
         self.label_dict[index] = search
 
-        # Total found items
-        total_found = sum(self.label_dict.values())
-
         # Update dictionary based on index
         curr_index = self.tab_widget.currentIndex()
-    
-        # Update Label and indexing
-        if len(self.label_dict) > 1:
-            self.index_label.setText(f"{self.label_dict[curr_index]} of {total_found} total found in table..")
-        else:
-            self.index_label.setText(f"{self.label_dict[curr_index]} found items..")
+        self.update_label(curr_index)
         return
 
+    
+    """
+    Display the proper found items for individual tables focused
+    """
+    def update_label(self, index) -> None:
+        
+        # Clear user selections when change tab
+        for table_widget in self.table_dict.values():
+            table_widget.selectionModel().clear()
+
+        if not self.label_dict:
+            self.index_label.setText("No items found.")
+        else:
+            label_val = self.label_dict[index]
+            total_found = sum(self.label_dict.values())
+            self.index_label.setText(f"{label_val} of {total_found} total found in table.")
+        return
+    
 
     """
     Load the search results into the results window

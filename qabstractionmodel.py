@@ -3,6 +3,7 @@ import re
 import itertools
 import pandas as pd
 import polars as pl
+from collections import defaultdict
 from sqlalchemy import create_engine, MetaData
 from PyQt5.QtGui import QColor, QDropEvent, QDragEnterEvent
 from PyQt5.QtCore import Qt, QAbstractTableModel, QThread, pyqtSignal
@@ -30,7 +31,6 @@ class SearchThread(QThread):
     """
     def run(self):
         index_values = self.search_text_in_dataframe()
-        # print(f"{len(index_values) = }")
         self.search_finished.emit(index_values)
 
 
@@ -105,15 +105,6 @@ class DataFrameTableModel(QAbstractTableModel):
         return None
 
     """
-    Number of found items
-    """
-    def num_found(self):
-        if self.highlighted_cells:
-            print(f"{len(self.highlighted_cells) = }")
-            return len(self.highlighted_cells)
-        print("HELLO?")
-
-    """
     Column total from dataframe
     """
     def columnCount(self, parent=None) -> int:
@@ -176,10 +167,11 @@ class DataFrameTableModel(QAbstractTableModel):
                 checkbox.setChecked(True)
         return
 
+
     """
     Update the searched results by highlighting specific columns
     """
-    def update_search_text(self) -> None:
+    def update_search_text(self) -> int:
         data_dict = {}
         combined_filter = None
     
@@ -189,18 +181,16 @@ class DataFrameTableModel(QAbstractTableModel):
         
         # Values outside of parentheses
         value = re.findall(r'\([^()]*\)|[^()]+', self.text)
-        print(f"{value = }")
-
+    
         for val in value:
             data_dict = self.match_bool(val, data_dict, combined_filter) 
-            print(f"{data_dict = }")
-    
+        found_items = len(data_dict)
+
         # Start the search thread
         self.search_thread = SearchThread(self, data_dict, self.visible_rows)
         self.search_thread.search_finished.connect(self.handle_search_results)
         self.search_thread.start()
-
-        return
+        return found_items
 
 
     """
@@ -663,6 +653,7 @@ class DataFrameViewer(QWidget):
         # Setup tab dictionary
         self.model_dict = {}
         self.table_dict = {}
+        self.label_dict = defaultdict(int)
 
         # Search bar handler
         search_bar = QLineEdit()
@@ -771,12 +762,17 @@ class DataFrameViewer(QWidget):
 
 
     """
-    Main tab widget closable
+    Main tab widget closable and search total label from label dict
     """
     def maintabCloseRequested(self, index) -> None:
         # Allows for a new instance of key to be added
+        print(f"{self.label_dict = }")
+
         del_tab = self.tab_widget.tabText(index)
-        if self.table_dict.get(del_tab) : del self.table_dict[del_tab]
+        if self.table_dict.get(del_tab):
+            del self.table_dict[del_tab]
+            del self.label_dict[index]
+        print(f"{self.label_dict = }")
         self.tab_widget.removeTab(index)
         return
 
@@ -792,9 +788,10 @@ class DataFrameViewer(QWidget):
         """
         def run_search(tab):
             if self.all_table.isChecked():
-                for i in range(len(tab)):
-                    index_table = tab.widget(i)
-                    return self.table_model_set(index_table)
+                for idx in range(len(tab)):
+                    index_table = tab.widget(idx)
+                    self.table_model_set(index_table)
+
             else:
                 current_tab = tab.currentIndex()
                 index_table = tab.widget(current_tab)
@@ -802,27 +799,49 @@ class DataFrameViewer(QWidget):
 
         # Run through all the tabs if they exist
         if self.tab_widget:
-            model = run_search(self.tab_widget)
-            test = model.num_found()
-            print(f'{test = }')
-   
+           run_search(self.tab_widget)
    
         # Check if user is searching all split tables
         if self._bool and self.split_search.isChecked():
             run_search(self.new_tab_widget)
-
         return
+
 
     """
     Check if index table is valid before searching
     """
-    def table_model_set(self, index_table):
+    def table_model_set(self, index_table) -> QAbstractTableModel:
         if isinstance(index_table, QTableView):
             model = index_table.model()
             model.text = self.search_text
-            model.update_search_text()
+            search = model.update_search_text()
+
+            # Populate the found items label and label dict
+            self.found_items(search, index_table)
         return model
+    
+
+    """
+    Process the number of found items in a table
+    """
+    def found_items(self, search, index_table) -> None: 
+        # Populate label dictionary to know how many fields found in each table
+        index = self.tab_widget.indexOf(index_table)
+        self.label_dict[index] = search
+
+        # Total found items
+        total_found = sum(self.label_dict.values())
+
+        # Update dictionary based on index
+        curr_index = self.tab_widget.currentIndex()
         
+    
+        # Update Label and indexing
+        if len(self.label_dict) > 1:
+            self.index_label.setText(f"{self.label_dict[curr_index]} of {total_found} total found in table..")
+        else:
+            self.index_label.setText(f"{self.label_dict[curr_index]} found items..")
+        return
 
 
     """

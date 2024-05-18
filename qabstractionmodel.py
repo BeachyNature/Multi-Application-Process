@@ -18,10 +18,9 @@ Searching thread to organize data into QModelIndexes
 class SearchThread(QThread):
     search_finished = pyqtSignal(list)
 
-    def __init__(self, table, data_dict, visible_rows):
+    def __init__(self, table, data_dict):
         super().__init__()
         self.highlighted_cells = []
-        self.visible_rows = visible_rows
         self.data_dict = data_dict
         self.table = table
 
@@ -75,7 +74,7 @@ class DataFrameTableModel(QAbstractTableModel):
     def rowCount(self, parent=None) -> int:
         # TODO: Use with checkbox
         return min(self.visible_rows, len(self._dataframe))
-
+    
 
     """
     Makes columns visible or not
@@ -90,29 +89,23 @@ class DataFrameTableModel(QAbstractTableModel):
     Sets up the table from the dataframes
     """
     def data(self, index, role=Qt.DisplayRole) -> None:
-
         if role == Qt.DisplayRole:
             if self.column_checkboxes is not None:
+                column_name = self.visible_columns[index.column()]
+                return str(self._dataframe[index.row(), column_name])
+            else:
                 return str(self._dataframe[index.row(), index.column()])
-        
-        # Check if the same row is called more than once
+
         if role == Qt.BackgroundRole:
             if index in self.highlighted_cells:
-                # Check if more than one occurrence of the same row
-                # row_counts = sum(1 for cell_index in self.highlighted_cells if cell_index.row() == index.row())
-                # if row_counts > 1:
-                #     return QColor("green")
                 return QColor("yellow")
-        return None
+        return
 
     """
     Column total from dataframe
     """
     def columnCount(self, parent=None) -> int:
-        if self.column_checkboxes:
-            return len(self.visible_columns)
-        else:
-            return len(self._dataframe.columns)
+        return len(self.visible_columns) if self.column_checkboxes else len(self._dataframe.columns)
 
 
     """
@@ -125,19 +118,7 @@ class DataFrameTableModel(QAbstractTableModel):
                     return str(self.visible_columns[section])
                 else:
                     return str(self._dataframe.columns[section])
-    
-            elif orientation == Qt.Vertical:
-                return str(section + 1)
-        return None
-
-
-    """
-    Update the visible rows counter to load the next amount of rows
-    """
-    def update_visible_rows(self) -> int:
-        self.visible_rows += 500
-        self.visible_rows = min(self.visible_rows, len(self._dataframe))
-        return self.visible_rows
+        return
     
 
     """
@@ -154,7 +135,7 @@ class DataFrameTableModel(QAbstractTableModel):
     def getColumnName(self, columnIndex) -> None:
         if 0 <= columnIndex < len(self._dataframe.columns):
             return str(self._dataframe.columns[columnIndex])
-        return None
+        return
 
 
     """
@@ -170,11 +151,28 @@ class DataFrameTableModel(QAbstractTableModel):
 
 
     """
+    Update the next 100 visible rows
+    """
+    def canFetchMore(self, index):
+        return self.visible_rows < len(self._dataframe)
+
+
+    """
+    This fetches the next 100 rows that need to be loaded in
+    """
+    def fetchMore(self, index):
+        remaining_rows = len(self._dataframe) - self.visible_rows
+        rows_to_fetch = min(100, remaining_rows)
+        self.beginInsertRows(index, self.visible_rows, len(self._dataframe) - 1)
+        self.visible_rows += rows_to_fetch
+        self.endInsertRows()
+    
+
+    """
     Update the searched results by highlighting specific columns
     """
     def update_search_text(self) -> int:
         data_dict = {}
-        combined_filter = None
 
         # Newly created dataframe based on conditions
         if re.search(r'[()]', self.text) is not None:
@@ -184,10 +182,10 @@ class DataFrameTableModel(QAbstractTableModel):
         value = re.findall(r'\([^()]*\)|[^()]+', self.text)
     
         for val in value:
-            self.index_dict, found_items = self.match_bool(val, data_dict, combined_filter) 
+            self.index_dict, found_items = self.match_bool(val, data_dict) 
 
         # Start the search thread
-        self.search_thread = SearchThread(self, self.index_dict, self.visible_rows)
+        self.search_thread = SearchThread(self, self.index_dict)
         self.search_thread.search_finished.connect(self.handle_search_results)
         self.search_thread.start()
         return found_items
@@ -253,7 +251,7 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     def condition_set(self, init_val, df, condition, pattern,
                       combined_filter, data_dict, _bool) -> dict:
-
+        # Match condition sets
         for cond_set in condition:
             matches = re.findall(pattern, cond_set)
             for match in matches:
@@ -278,9 +276,10 @@ class DataFrameTableModel(QAbstractTableModel):
     """
     Detect whether the condition is split between and/or condition or none
     """
-    def match_bool(self, val, data_dict, combined_filter) -> dict:
+    def match_bool(self, val, data_dict) -> dict:
 
         # Chunked Dataframe
+        combined_filter = None
         df = self._dataframe[:self.visible_rows]
 
         # Split based on boolean conditional
@@ -304,8 +303,6 @@ class DataFrameTableModel(QAbstractTableModel):
         if filter_expr is not None:
             df = df.filter(filter_expr)
             total_items = self.found_items(filter_expr)
-            
-            # Fill in data dict of indexes
             data_dict = self.index_row(df, col, data_dict)
             return data_dict, total_items
         return
@@ -330,9 +327,7 @@ class DataFrameTableModel(QAbstractTableModel):
     Populate the results window
     """
     def get_result(self) -> pl.DataFrame:
-        # Loop through dictionary keys and return corresponding rows
-        combined_df = pl.concat([self._dataframe[key-1] for key in self.index_dict])
-        return combined_df
+        return pl.concat([self._dataframe[key-1] for key in self.index_dict]) if self.text else pl.DataFrame()
 
 
 """
@@ -543,7 +538,7 @@ class ExpandableText(QWidget):
         
             if is_within_range(current_value, max_value):
                 if len(self.dataframe) > 500:
-                    self.model_dict[table].update_visible_rows()
+                    # self.model_dict[table].update_visible_rows()
                     self.model_dict[table].update_search_text()
 
 

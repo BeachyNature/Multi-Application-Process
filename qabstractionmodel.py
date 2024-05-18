@@ -175,11 +175,12 @@ class DataFrameTableModel(QAbstractTableModel):
         data_dict = {}
 
         # Newly created dataframe based on conditions
-        if re.search(r'[()]', self.text) is not None:
-            value = re.findall(r'\((.*?)\)', self.text)
+        text = self.text.lower()
+        if re.search(r'[()]', text) is not None:
+            value = re.findall(r'\((.*?)\)', text)
         
         # Values outside of parentheses
-        value = re.findall(r'\([^()]*\)|[^()]+', self.text)
+        value = re.findall(r'\([^()]*\)|[^()]+', text)
     
         for val in value:
             self.index_dict, found_items = self.match_bool(val, data_dict) 
@@ -195,7 +196,7 @@ class DataFrameTableModel(QAbstractTableModel):
     Fill in the data dictionary with row indexes and column index for each found item
     """
     def index_row(self, df, columns, data_dict) -> dict:
-        rows = df['Index'].to_list()
+        rows = df['index'].to_list()
         cols = df.get_column_index(columns)
     
         for row in rows:
@@ -679,6 +680,7 @@ class DataFrameViewer(QWidget):
 
         # Run the data through the expanded text list
         for csv_name, df in self.data.items():
+            df = df.rename({col: col.lower() for col in df.columns})
             text_widget = ExpandableText(df, csv_name, self.tab_widget, None,
                                         self.table_split, self.model_dict,
                                         self.table_dict, self.csv_button)
@@ -784,12 +786,12 @@ class DataFrameViewer(QWidget):
         """
         Check if user is search all existing tables or not
         """
-        def run_search(tab):
+        def run_search(tab) -> None:
             if self.all_table.isChecked():
                 for idx in range(len(tab)):
                     index_table = tab.widget(idx)
                     self.table_model_set(index_table)
-
+                return
             else:
                 current_tab = tab.currentIndex()
                 index_table = tab.widget(current_tab)
@@ -868,25 +870,9 @@ class DataFrameViewer(QWidget):
             model = self.tab_widget.widget(index).model()
             data = model.get_result()
 
-            # # If user is searching with a conditional or not
-            # if not model._bool:
-            #     # Use applymap with vectorized string methods to search for the text in each cell
-            #     search_result = data[data.apply(lambda col: col.map(lambda x: str(x).lower().find(self.search_text.lower()) != -1))]
-            
-            #     # Get all non-NaN values and create a new DataFrame with original indices and a column indicating where the item is found
-            #     non_nan = search_result.stack().dropna()
-            #     df = pd.DataFrame({'value': non_nan.values,
-            #                        'search_index': non_nan.index.get_level_values(0)})
-            #     data = df.groupby('search_index').agg({'value': list}).reset_index()
-
-            # else:
-            #     print(f"Conditional Search processing in {tab_name}...")
-
-
             # Make table model and apply
             model = DataFrameTableModel(data, None)
-            
-            print(f"{data = }")
+
             self.results_table = QTableView()
             self.results_table.setModel(model)
 

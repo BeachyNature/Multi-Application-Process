@@ -113,10 +113,6 @@ class DataFrameTableModel(QAbstractTableModel):
         """
         Get the current dataframe from the table, this also factors in hidden rows
         """
-    def get_dataframe(self) -> pl.DataFrame:
-        """
-        Get the current dataframe from the table, this also factors in hidden rows
-        """
         visible_columns = [col for col, checkbox in self.column_checkboxes.items() if checkbox.isChecked()]
         return pl.DataFrame(self._dataframe[visible_columns])
 
@@ -247,19 +243,14 @@ class DataFrameTableModel(QAbstractTableModel):
             combined_filter = filter_expr if combined_filter is None else combined_filter | filter_expr
         return combined_filter
 
-    def condition_set(self, val, df, condition, combined_filter,
-                      data_dict, _bool) -> dict:
-        """
-        Split the conditions up into sets and combine back together
-        """
-        pattern = r'\s*([^\s=><!]+)\s*([=><!]+)\s*([^\s=><!]+)\s*'
-        
 
-    def condition_set(self, init_val, df, condition, pattern,
+    def condition_set(self, val, df, condition, pattern,
                       combined_filter, data_dict, _bool) -> dict:
         """
         Split the conditions up into sets and combine back together
         """
+        pattern = r'\s*([^\s=><!]+)\s*([=><!]+)\s*([^\s=><!]+)\s*'
+
         for cond_set in condition:
             matches = re.findall(pattern, cond_set)
             for match in matches:
@@ -280,11 +271,6 @@ class DataFrameTableModel(QAbstractTableModel):
         """
         Detect whether the condition is split between and/or condition or none
         """
-    def match_bool(self, val, data_dict) -> dict:
-        """
-        Detect whether the condition is split between and/or condition or none
-        """
-
         # Chunked Dataframe
         combined_filter = None
         df = self.current_dataframe()[:self.visible_rows]
@@ -294,15 +280,11 @@ class DataFrameTableModel(QAbstractTableModel):
             return self.condition_set(val, df, condition, 
                                       combined_filter,
                                       data_dict, False)
-            return self.condition_set(val, df, condition, pattern,
-                                      combined_filter, data_dict, False)
         elif 'or' in val:
             condition = re.split(r'\bor\b', val)
             return self.condition_set(val, df, condition,
                                       combined_filter,
                                       data_dict, True)
-            return self.condition_set(val, df, condition, pattern,
-                                      combined_filter, data_dict, True)
         else:
             col, op, val = map(str.strip, val.split())
             filter_expr = self.dynamic_expr(op, val, col, None)
@@ -361,8 +343,6 @@ class ExpandableText(QWidget):
         """
         Run the tabs and know when to split or not
         """
-        self.setAcceptDrops(True)
-
         # If the table is for inital setup or comparison load in
         if isinstance(self.index, int):
             self.setup_data()
@@ -378,7 +358,7 @@ class ExpandableText(QWidget):
         button_layout = QVBoxLayout()
 
         # Button setups and styles
-        self.check_button = QPushButton(self.csv_name + " +")
+        self.check_button = QPushButton(f"{self.csv_name}  +")
         self.check_button.clicked.connect(self.toggle_expansion)
         
         self.check_button.setStyleSheet('border: none; color: black; font-size: 24px;')
@@ -502,10 +482,6 @@ class ExpandableText(QWidget):
         return
 
     def create_column_checkboxes(self) -> QCheckBox:
-        """
-        Create the checkboxes that allows for user to toggle columns in dataframe table
-        """
-    def create_column_checkboxes(self):
         """
         Create the checkboxes that allows for user to toggle columns in dataframe table
         """

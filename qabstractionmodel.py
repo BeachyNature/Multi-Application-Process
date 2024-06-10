@@ -37,7 +37,7 @@ class SearchThread(QThread):
         for key, value in (
             itertools.chain.from_iterable(
                 (itertools.product((k,), v) for k, v in self.data_dict.items()))):
-                    self.highlighted_cells.append(self.table.index(key-1, value))
+                    highlighted_cells.append(self.table.index(key-1, value))
         return highlighted_cells
 
 class DataFrameTableModel(QAbstractTableModel):
@@ -106,8 +106,7 @@ class DataFrameTableModel(QAbstractTableModel):
             if orientation == Qt.Horizontal:
                 if self.column_checkboxes:
                     return str(self.visible_columns[section])
-                else:
-                    return str(self._dataframe.columns[section])
+                return str(self._dataframe.columns[section])
     
     def get_dataframe(self) -> pl.DataFrame:
         """
@@ -264,12 +263,10 @@ class DataFrameTableModel(QAbstractTableModel):
             condition = re.split(r'(?:and|&|,)', val)
             return self.condition_set(val, df, condition, pattern,
                                       combined_filter, data_dict, False)
-
         elif 'or' in val:
             condition = re.split(r'\bor\b', val)
             return self.condition_set(val, df, condition, pattern,
                                       combined_filter, data_dict, True)
-
         else:
             col, op, val = map(str.strip, val.split())
             filter_expr = self.dynamic_expr(op, val, col, None)
@@ -354,10 +351,8 @@ class ExpandableText(QWidget):
         # Apply widgets
         button_layout.addWidget(self.check_button)
         button_layout.addWidget(self.options_widget)
-        # button_layout.addWidget(self.csv_button) # TODO add to bottom of vertical bar
         layout.addLayout(button_layout)
         layout.addStretch()
-        layout.update()
         self.setLayout(layout)
         return
 
@@ -707,19 +702,17 @@ class DataFrameViewer(QWidget):
             ExpandableText(self, self.new_tab_widget, dataframe, new_name, index)
         return
 
-    """
-    Make all tabs after the first one closable
-    """
     def tabCloseRequested(self) -> None:
+        """
+        Make all tabs after the first one closable
+        """
         self.table_split.widget(1).setParent(None)
         return
 
-
-    """
-    Main tab widget closable and search total label from label dict
-    """
     def maintabCloseRequested(self, index) -> None:
-        # Allows for a new instance of key to be added
+        """
+        Main tab widget closable and search total label from label dict
+        """
         del_tab = self.tab_widget.tabText(index)
         if self.table_dict.get(del_tab):
             del self.table_dict[del_tab]
@@ -728,26 +721,24 @@ class DataFrameViewer(QWidget):
         self.tab_widget.removeTab(index)
         return
 
-
-    """
-    User can type a string here and search all the loaded tables to highlight them
-    """
     def search_tables(self) -> None:
+        """
+        User can type a string here and search all the loaded tables to highlight them
+        """
         self.search_text = self.sender().text()
-
-        """
-        Check if user is search all existing tables or not
-        """
         def run_search(tab) -> None:
+            """
+            Check if user is search all existing tables or not
+            """
             if self.all_table.isChecked():
                 for idx in range(len(tab)):
                     index_table = tab.widget(idx)
                     self.table_model_set(index_table)
                 return
-            else:
-                current_tab = tab.currentIndex()
-                index_table = tab.widget(current_tab)
-                return self.table_model_set(index_table)
+            
+            current_tab = tab.currentIndex()
+            index_table = tab.widget(current_tab)
+            return self.table_model_set(index_table)
 
         # Run through all the tabs if they exist
         if self.tab_widget:
@@ -758,11 +749,10 @@ class DataFrameViewer(QWidget):
             run_search(self.new_tab_widget)
         return
 
-
-    """
-    Check if index table is valid before searching
-    """
     def table_model_set(self, index_table) -> QAbstractTableModel:
+        """
+        Check if index table is valid before searching
+        """
         if isinstance(index_table, QTableView):
             model = index_table.model()
             model.text = self.search_text
@@ -772,12 +762,10 @@ class DataFrameViewer(QWidget):
             self.found_items(search, index_table)
         return model
     
-
-    """
-    Process the number of found items in a table
-    """
     def found_items(self, search, index_table) -> None: 
-        # Populate label dictionary to know how many fields found in each table
+        """
+        Process the number of found items in a table
+        """
         index = self.tab_widget.indexOf(index_table)
         self.label_dict[index] = search
 
@@ -786,11 +774,10 @@ class DataFrameViewer(QWidget):
         self.update_label(curr_index)
         return
 
-    
-    """
-    Display the proper found items for individual tables focused
-    """
     def update_label(self, index) -> None:
+        """
+        Display the proper found items for individual tables focused
+        """
         if not self.label_dict:
             self.index_label.setText("No items found.")
             return
@@ -800,13 +787,10 @@ class DataFrameViewer(QWidget):
         self.index_label.setText(f"{label_val} of {total_found} total found in table.")
         return
     
-
-    """
-    Load the search results into the results window
-    """
     def load_search_results(self) -> None:
-
-        # Add to layout to tab
+        """
+        Load the search results into the results window
+        """
         self.tab_dict = {}
         self.result_tab = QTabWidget()
         self.central_widget = QWidget()
@@ -838,19 +822,16 @@ class DataFrameViewer(QWidget):
             # Defined model and data
             if self.tab_widget.tabText(index) not in self.tab_dict:
                 self.tab_dict[tab_name] = [index, self.results_table]
-            else:
-                return
+            return
         
         # Load the find items window
         self.central_widget.show()
+        return
 
-
-    """
-    Index to the right highlighted value when clicked
-    """
-    def on_clicked(self):
-
-        # Go to current table index
+    def on_clicked(self) -> None:
+        """
+        Index to the right highlighted value when clicked
+        """
         current_index = self.result_tab.currentIndex()
         tab_item = self.tab_dict[self.result_tab.tabText(current_index)]
         self.tab_widget.setCurrentIndex(tab_item[0])

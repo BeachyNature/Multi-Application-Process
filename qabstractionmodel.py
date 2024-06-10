@@ -19,6 +19,7 @@ class SearchThread(QThread):
 
     def __init__(self, table, data_dict):
         super().__init__()
+        self.data_dict = data_dict
         self.table = table
         self.data_dict = data_dict
 
@@ -112,6 +113,10 @@ class DataFrameTableModel(QAbstractTableModel):
         """
         Get the current dataframe from the table, this also factors in hidden rows
         """
+    def get_dataframe(self) -> pl.DataFrame:
+        """
+        Get the current dataframe from the table, this also factors in hidden rows
+        """
         visible_columns = [col for col, checkbox in self.column_checkboxes.items() if checkbox.isChecked()]
         return pl.DataFrame(self._dataframe[visible_columns])
 
@@ -179,6 +184,10 @@ class DataFrameTableModel(QAbstractTableModel):
         if columns not in df.columns:
             return
         
+    def index_row(self, df, columns, data_dict) -> dict:
+        """
+        Fill in the data dictionary with row indexes and column index for each found item
+        """
         rows = df['index'].to_list()
         cols = df.get_column_index(columns)
     
@@ -245,6 +254,12 @@ class DataFrameTableModel(QAbstractTableModel):
         """
         pattern = r'\s*([^\s=><!]+)\s*([=><!]+)\s*([^\s=><!]+)\s*'
         
+
+    def condition_set(self, init_val, df, condition, pattern,
+                      combined_filter, data_dict, _bool) -> dict:
+        """
+        Split the conditions up into sets and combine back together
+        """
         for cond_set in condition:
             matches = re.findall(pattern, cond_set)
             for match in matches:
@@ -265,6 +280,12 @@ class DataFrameTableModel(QAbstractTableModel):
         """
         Detect whether the condition is split between and/or condition or none
         """
+    def match_bool(self, val, data_dict) -> dict:
+        """
+        Detect whether the condition is split between and/or condition or none
+        """
+
+        # Chunked Dataframe
         combined_filter = None
         df = self.current_dataframe()[:self.visible_rows]
 
@@ -273,11 +294,15 @@ class DataFrameTableModel(QAbstractTableModel):
             return self.condition_set(val, df, condition, 
                                       combined_filter,
                                       data_dict, False)
+            return self.condition_set(val, df, condition, pattern,
+                                      combined_filter, data_dict, False)
         elif 'or' in val:
             condition = re.split(r'\bor\b', val)
             return self.condition_set(val, df, condition,
                                       combined_filter,
                                       data_dict, True)
+            return self.condition_set(val, df, condition, pattern,
+                                      combined_filter, data_dict, True)
         else:
             col, op, val = map(str.strip, val.split())
             filter_expr = self.dynamic_expr(op, val, col, None)
@@ -336,6 +361,9 @@ class ExpandableText(QWidget):
         """
         Run the tabs and know when to split or not
         """
+        self.setAcceptDrops(True)
+
+        # If the table is for inital setup or comparison load in
         if isinstance(self.index, int):
             self.setup_data()
             return
@@ -454,12 +482,12 @@ class ExpandableText(QWidget):
         self.table_names.append(sender.text())
         return
 
-    def add_dragged_file(self, df, table_name) -> None:
+    def add_dragged_file(self, df, table_name):
         """
-        Return dragged items into the expanded text area
+        Return dragged items
         """
-        new_instance = ExpandableText(self.data_obj, self.tab_widget,
-                                      df, table_name, None)
+        # Create a new instance with the new data
+        new_instance = ExpandableText(self.data_obj, self.tab_widget, df, table_name, None)
                     
         # Find the existing vertical layout in the current layout
         for i in range(self.layout().count()):
@@ -474,6 +502,10 @@ class ExpandableText(QWidget):
         return
 
     def create_column_checkboxes(self) -> QCheckBox:
+        """
+        Create the checkboxes that allows for user to toggle columns in dataframe table
+        """
+    def create_column_checkboxes(self):
         """
         Create the checkboxes that allows for user to toggle columns in dataframe table
         """

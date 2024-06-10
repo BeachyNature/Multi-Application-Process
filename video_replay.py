@@ -7,7 +7,6 @@ import py7zr
 import os
 import shutil
 import cv2
-import atexit
 
 ######## Uncomment this if you recieved error that Tesseract is not in your Path. #############
 # pytesseract.pytesseract.tesseract_cmd = "C:/Program Files/Tesseract-OCR/tesseract.exe"

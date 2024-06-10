@@ -1,7 +1,6 @@
 import os
 import re
 import itertools
-import pandas as pd
 import polars as pl
 from collections import defaultdict
 from sqlalchemy import create_engine, MetaData
@@ -12,43 +11,39 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton,\
                             QTabWidget, QSplitter, QFileDialog, QLabel, QDialog
 
 
-"""
-Searching thread to organize data into QModelIndexes
-"""
 class SearchThread(QThread):
+    """
+    Searching thread to organize data into QModelIndexes
+    """
     search_finished = pyqtSignal(list)
 
     def __init__(self, table, data_dict):
         super().__init__()
-        self.highlighted_cells = []
-        self.data_dict = data_dict
         self.table = table
+        self.data_dict = data_dict
 
-
-    """
-    Recieve index values of the searched data
-    """
     def run(self) -> None:
-        index_values = self.search_text_in_dataframe()
+        """
+        Recieve index values of the searched data
+        """
+        index_values = self.search_text_in_dataframe([])
         self.search_finished.emit(index_values)
         return
 
-
-    """
-    Store the QModelIndex objects corresponding to the matched rows in dataframe
-    """
-    def search_text_in_dataframe(self) -> list:
+    def search_text_in_dataframe(self, highlighted_cells) -> list:  
+        """
+        Store the QModelIndex objects corresponding to the matched rows in dataframe
+        """
         for key, value in (
             itertools.chain.from_iterable(
                 (itertools.product((k,), v) for k, v in self.data_dict.items()))):
-                    self.highlighted_cells.append(self.table.index(key-1, value)) # Due to how current csv works
-        return self.highlighted_cells
+                    highlighted_cells.append(self.table.index(key-1, value))
+        return highlighted_cells
 
-
-"""
-Created QAbstractionTableModel that each dataframe loaded in utilizes
-"""
 class DataFrameTableModel(QAbstractTableModel):
+    """
+    Created QAbstractionTableModel that each dataframe loaded in utilizes
+    """
     def __init__(self, dataframe, column_checkboxes, parent=None):
         super(DataFrameTableModel, self).__init__(parent)
 
@@ -57,7 +52,6 @@ class DataFrameTableModel(QAbstractTableModel):
         self._bool = False
         self.highlighted_cells = []
         self.result = pl.DataFrame()
-        self._selected_indexes = set()
 
         # Dataframe configure/setup
         self.column_checkboxes = column_checkboxes
@@ -67,111 +61,98 @@ class DataFrameTableModel(QAbstractTableModel):
         # Set the visible row count
         self.update_visible_columns()
 
-
-    """
-    Row counter that factors in batch size loading
-    """
-    def rowCount(self, parent=None) -> int:
+    def rowCount(self, parent=None) -> int:    
+        """
+        Row counter that factors in batch size loading
+        """
         # TODO: Use with checkbox
         return min(self.visible_rows, len(self._dataframe))
     
-
-    """
-    Makes columns visible or not
-    """
-    def update_visible_columns(self) -> None:
+    def update_visible_columns(self) -> None: 
+        """
+        Makes columns visible or not
+        """
         if self.column_checkboxes is not None:
             self.visible_columns = [col for col, checkbox in self.column_checkboxes.items() if checkbox.isChecked()]
             self.layoutChanged.emit()
         return
 
-    """
-    Sets up the table from the dataframes
-    """
     def data(self, index, role=Qt.DisplayRole) -> None:
+        """
+        Sets up the table from the dataframes
+        """
         if role == Qt.DisplayRole:
             if self.column_checkboxes is not None:
                 column_name = self.visible_columns[index.column()]
                 return str(self._dataframe[index.row(), column_name])
-            else:
-                return str(self._dataframe[index.row(), index.column()])
+            return str(self._dataframe[index.row(), index.column()])
 
         if role == Qt.BackgroundRole:
             if index in self.highlighted_cells:
                 return QColor("yellow")
         return
 
-    """
-    Column total from dataframe
-    """
     def columnCount(self, parent=None) -> int:
+        """
+        Column total from dataframe
+        """
         return len(self.visible_columns) if self.column_checkboxes else len(self._dataframe.columns)
 
-
-    """
-    Creates the headers for the table
-    """
     def headerData(self, section, orientation, role=Qt.DisplayRole) -> None:
+        """
+        Creates the headers for the table
+        """
         if role == Qt.DisplayRole:
             if orientation == Qt.Horizontal:
                 if self.column_checkboxes:
                     return str(self.visible_columns[section])
-                else:
-                    return str(self._dataframe.columns[section])
-        return
+                return str(self._dataframe.columns[section])
     
-
-    """
-    Get the current dataframe from the table, this also factors in hidden rows
-    """
-    def get_dataframe(self) -> pl.DataFrame:
+    def current_dataframe(self) -> pl.DataFrame:
+        """
+        Get the current dataframe from the table, this also factors in hidden rows
+        """
         visible_columns = [col for col, checkbox in self.column_checkboxes.items() if checkbox.isChecked()]
         return pl.DataFrame(self._dataframe[visible_columns])
 
-
-    """
-    Get the column name of specific selected column
-    """
     def getColumnName(self, columnIndex) -> None:
+        """
+        Get the column name of specific selected column
+        """
         if 0 <= columnIndex < len(self._dataframe.columns):
             return str(self._dataframe.columns[columnIndex])
         return
 
-
-    """
-    Uncheck all the columns that are not being filtered    
-    """
     def uncheck_all_other_columns(self, col_name) -> None:
+        """
+        Uncheck all the columns that are not being filtered    
+        """
         for name, checkbox in self.column_checkboxes.items():
+            checkbox.setChecked(True)
             if name != col_name and self._bool:
                 checkbox.setChecked(False)
-            else:
-                checkbox.setChecked(True)
         return
 
-
-    """
-    Update the next 100 visible rows
-    """
     def canFetchMore(self, index):
+        """
+        Update the next 100 visible rows
+        """
         return self.visible_rows < len(self._dataframe)
 
-
-    """
-    This fetches the next 100 rows that need to be loaded in
-    """
     def fetchMore(self, index):
+        """
+        This fetches the next 100 rows that need to be loaded in
+        """
         remaining_rows = len(self._dataframe) - self.visible_rows
         rows_to_fetch = min(100, remaining_rows)
         self.beginInsertRows(index, self.visible_rows, len(self._dataframe) - 1)
         self.visible_rows += rows_to_fetch
         self.endInsertRows()
     
-
-    """
-    Update the searched results by highlighting specific columns
-    """
     def update_search_text(self) -> int:
+        """
+        Update the searched results by highlighting specific columns
+        """
         data_dict = {}
 
         # Newly created dataframe based on conditions
@@ -179,7 +160,6 @@ class DataFrameTableModel(QAbstractTableModel):
         if re.search(r'[()]', text) is not None:
             value = re.findall(r'\((.*?)\)', text)
         
-        # Values outside of parentheses
         value = re.findall(r'\([^()]*\)|[^()]+', text)
     
         for val in value:
@@ -191,11 +171,14 @@ class DataFrameTableModel(QAbstractTableModel):
         self.search_thread.start()
         return found_items
 
-
-    """
-    Fill in the data dictionary with row indexes and column index for each found item
-    """
     def index_row(self, df, columns, data_dict) -> dict:
+        """
+        Fill in the data dictionary with row indexes and column index for each found item
+        """
+
+        if columns not in df.columns:
+            return
+        
         rows = df['index'].to_list()
         cols = df.get_column_index(columns)
     
@@ -207,10 +190,10 @@ class DataFrameTableModel(QAbstractTableModel):
         return data_dict
 
 
-    """
-    Dynamically setup the expressions
-    """
     def dynamic_expr(self, operator, value, column, filter_expr) -> filter:
+        """
+        Dynamically setup the expressions
+        """
         if value.isdigit():
             match operator:
                 case '=':
@@ -237,65 +220,64 @@ class DataFrameTableModel(QAbstractTableModel):
                     print(f"Invalid operator: {operator}")
         return filter_expr
 
-
-    """
-    Process dataframe and index rows
-    """
-    def process_filter(self, df, col, data_dict, combined_filter):
+    def process_filter(self, df, col, data_dict, combined_filter):      
+        """
+        Process dataframe and index rows
+        """
         df = df.filter(combined_filter)
         data_dict = self.index_row(df, col, data_dict)
         return data_dict
+    
+    def multi_filter(self, _bool, filter_expr, combined_filter) -> filter:
+        """
+        Process the and/or operations and return expression
+        """
+        if not _bool:
+            combined_filter = filter_expr if combined_filter is None else combined_filter & filter_expr
+        else:
+            combined_filter = filter_expr if combined_filter is None else combined_filter | filter_expr
+        return combined_filter
 
-
-    """
-    Split the conditions up into sets and combine back together
-    """
-    def condition_set(self, init_val, df, condition, pattern,
-                      combined_filter, data_dict, _bool) -> dict:
-        # Match condition sets
+    def condition_set(self, val, df, condition, combined_filter,
+                      data_dict, _bool) -> dict:
+        """
+        Split the conditions up into sets and combine back together
+        """
+        pattern = r'\s*([^\s=><!]+)\s*([=><!]+)\s*([^\s=><!]+)\s*'
+        
         for cond_set in condition:
             matches = re.findall(pattern, cond_set)
             for match in matches:
                 col = re.sub(r"\(|\)", "", match[0].strip())
                 op = re.sub(r"\(|\)", "", match[1].strip())
                 val = re.sub(r"\(|\)", "", match[2].strip())
+            
+            # Process multi-conditions
             filter_expr = self.dynamic_expr(op, val, col, None)
-
-            if _bool:
-                combined_filter = filter_expr if combined_filter is None else combined_filter | filter_expr
-            else:
-                combined_filter = filter_expr if combined_filter is None else combined_filter & filter_expr
-
-            if re.search(r'[()]', init_val) is not None:
-                data_dict = self.process_filter(df, col, data_dict, combined_filter)
+            combined_filter = self.multi_filter(_bool, filter_expr, combined_filter)
+            data_dict = self.process_filter(df, col, data_dict, combined_filter)
 
         data_dict = self.process_filter(df, col, data_dict, combined_filter)
         total_items = self.found_items(combined_filter)
         return data_dict, total_items
 
-
-    """
-    Detect whether the condition is split between and/or condition or none
-    """
     def match_bool(self, val, data_dict) -> dict:
-
-        # Chunked Dataframe
+        """
+        Detect whether the condition is split between and/or condition or none
+        """
         combined_filter = None
-        df = self._dataframe[:self.visible_rows]
-
-        # Split based on boolean conditional
-        pattern = r'\s*([^\s=><!]+)\s*([=><!]+)\s*([^\s=><!]+)\s*'
+        df = self.current_dataframe()[:self.visible_rows]
 
         if 'and' in val:
             condition = re.split(r'(?:and|&|,)', val)
-            return self.condition_set(val, df, condition, pattern,
-                                      combined_filter, data_dict, False)
-
+            return self.condition_set(val, df, condition, 
+                                      combined_filter,
+                                      data_dict, False)
         elif 'or' in val:
             condition = re.split(r'\bor\b', val)
-            return self.condition_set(val, df, condition, pattern,
-                                      combined_filter, data_dict, True)
-
+            return self.condition_set(val, df, condition,
+                                      combined_filter,
+                                      data_dict, True)
         else:
             col, op, val = map(str.strip, val.split())
             filter_expr = self.dynamic_expr(op, val, col, None)
@@ -308,73 +290,71 @@ class DataFrameTableModel(QAbstractTableModel):
             return data_dict, total_items
         return
 
-
-    """
-    Get total found items to fill in the index label
-    """
     def found_items(self, dynam_expr):
+        """
+        Get total found items to fill in the index label
+        """
         return len(self._dataframe.filter(dynam_expr))
 
-
-    """
-    Apply the newly converted dataframe index values to qmodelindex to be highlighted
-    """
     def handle_search_results(self, index_values):
+        """
+        Apply the newly converted dataframe index values to qmodelindex to be highlighted
+        """
         self.highlighted_cells = index_values
         self.layoutChanged.emit()
 
-
-    """
-    Populate the results window
-    """
     def get_result(self) -> pl.DataFrame:
+        """
+        Populate the results window
+        """
         return pl.concat([self._dataframe[key-1] for key in self.index_dict]) if self.text else pl.DataFrame()
 
-
-"""
-Setup the expandable text checkboxes and setup their individual tables that are loaded in
-"""
 class ExpandableText(QWidget):
-    def __init__(self, dataframe, csv_name, tab_widget, index, splitter, model_dict, table_dict, csv_button):
+    """
+    Setup the expandable text checkboxes and setup their individual tables that are loaded in
+    """
+    def __init__(self, data_obj, tab_widget, dataframe, csv_name, index):
         super().__init__()
         self.saved_data = None
         self.is_expanded = False
         self.first_split = False
+
+        self.data_obj = data_obj
+        self.table_split = data_obj.table_split
+        self.model_dict = data_obj.model_dict
+        self.table_dict = data_obj.table_dict
+        self.tab_widget = tab_widget
         self.dataframe = dataframe
         self.csv_name = csv_name
-        self.tab_widget = tab_widget
-        self.table_split = splitter
-        self.model_dict = model_dict
-        self.table_dict = table_dict
-        self.csv_button = csv_button
         self.index = index
-        self.setAcceptDrops(True)
 
-        # Setup save CSV button in ExpandedTextView
-        self.csv_button.clicked.connect(self.save_csv)
         self.column_checkboxes = self.create_column_checkboxes()
-    
-        # If the table is for inital setup or comparison load in
+        self.setAcceptDrops(True)
+        self.run_tab()
+
+    def run_tab(self) -> None:
+        """
+        Run the tabs and know when to split or not
+        """
         if isinstance(self.index, int):
             self.setup_data()
-        else:
-            self.init_ui()
+            return
+        self.init_ui()
+        return
 
-
-    """
-    Setup each table and tab for the loaded dataframes
-    """
-    def init_ui(self):
+    def init_ui(self) -> None:
+        """
+        Setup each table and tab for the loaded dataframes
+        """
         layout = QHBoxLayout()
         button_layout = QVBoxLayout()
 
         # Button setups and styles
         self.check_button = QPushButton(self.csv_name + " +")
         self.check_button.clicked.connect(self.toggle_expansion)
-
-        if not self.dataframe.is_empty():
-            self.check_button.setStyleSheet('border: none; color: black; font-size: 24px;')
-        else:
+        
+        self.check_button.setStyleSheet('border: none; color: black; font-size: 24px;')
+        if self.dataframe.is_empty():
             self.check_button.setStyleSheet('border: none; color: red; font-size: 24px;')
 
         # Setup the column selection buttons
@@ -386,29 +366,25 @@ class ExpandableText(QWidget):
         # Apply widgets
         button_layout.addWidget(self.check_button)
         button_layout.addWidget(self.options_widget)
-        # button_layout.addWidget(self.csv_button) # TODO add to bottom of vertical bar
         layout.addLayout(button_layout)
         layout.addStretch()
-        layout.update()
         self.setLayout(layout)
+        return
 
-
-    """
-    Enable drag and drop event for CSV and DB files
-    """
     def dragEnterEvent(self, event: QDragEnterEvent):
+        """
+        Enable drag and drop event for CSV and DB files
+        """
         mime_data = event.mimeData()
         if mime_data.hasUrls():
             urls = [url.toLocalFile().lower() for url in mime_data.urls()]
             if all(url.endswith(('.csv', '.db')) for url in urls):
                 event.acceptProposedAction()
 
-
-    """
-    Register the drop event and handle the new data 
-    """
-    def dropEvent(self, event: QDropEvent):
-        # Retrieve the file URLs from the mime data
+    def dropEvent(self, event: QDropEvent) -> None:
+        """
+        Register the drop event and handle the new data 
+        """
         mime_data = event.mimeData()
         urls = mime_data.urls()
 
@@ -453,39 +429,37 @@ class ExpandableText(QWidget):
   
         # Accept action to add new csv
         event.acceptProposedAction()
+        return
 
-
-    """
-    Load user selected files
-    """
-    def load_db_table(self, engine, dialog):
+    def load_db_table(self, engine, dialog) -> None:
+        """
+        Load user selected files
+        """
         for table_name in self.table_names:
             df = pl.read_database(
                     query=f"SELECT * FROM {table_name}",
                     connection=engine)
             self.add_dragged_file(df, table_name)
         dialog.close()
+        return
 
-
-    """
-    Handle what tables user wants to load in
-    """
     def handle_checkbox(self, state) -> None:
+        """
+        Handle what tables user wants to load in
+        """
         sender = self.sender()
-        if state == 0:
+        if not state:
             self.table_names.remove(sender.text())
-        else:
-             self.table_names.append(sender.text())
+            return
+        self.table_names.append(sender.text())
+        return
 
-
-    """
-    Return dragged items
-    """
-    def add_dragged_file(self, df, table_name):
-        # Create a new instance with the new data
-        new_instance = ExpandableText(df, table_name, self.tab_widget, None,
-                                    self.table_split, self.model_dict,
-                                    self.table_dict, self.csv_button)
+    def add_dragged_file(self, df, table_name) -> None:
+        """
+        Return dragged items into the expanded text area
+        """
+        new_instance = ExpandableText(self.data_obj, self.tab_widget,
+                                      df, table_name, None)
                     
         # Find the existing vertical layout in the current layout
         for i in range(self.layout().count()):
@@ -497,12 +471,12 @@ class ExpandableText(QWidget):
         # If there is an existing vertical layout, add the new instance to it
         if existing_vertical_layout:
             existing_vertical_layout.addWidget(new_instance)
+        return
 
-    
-    """
-    Create the checkboxes that allows for user to toggle columns in dataframe table
-    """
-    def create_column_checkboxes(self):
+    def create_column_checkboxes(self) -> QCheckBox:
+        """
+        Create the checkboxes that allows for user to toggle columns in dataframe table
+        """
         column_checkboxes = {}
         for column in self.dataframe.columns:
             checkbox = QCheckBox(column)
@@ -512,84 +486,82 @@ class ExpandableText(QWidget):
             column_checkboxes[column] = checkbox
         return column_checkboxes
     
-
-    """
-    Setups of the column selection items
-    """
-    def toggle_expansion(self):
+    def toggle_expansion(self) -> None:
+        """
+        Setups of the column selection items
+        """
         self.is_expanded = not self.is_expanded
         self.check_button.setText(self.csv_name + " -" if self.is_expanded else self.csv_name + " +")
 
         for i in range(self.options_widget.layout().count()):
             option_widget = self.options_widget.layout().itemAt(i).widget()
             option_widget.setVisible(self.is_expanded)
-
         self.setup_data()
+        return
 
+    def load_more_data(self, table, value) -> None:
+        """
+        Tells the model to load the next 500 rows
+        """
+        max_value = table.verticalScrollBar().maximum()
+        current_value = table.verticalScrollBar().value()
 
-    """
-    Tells the model to load the next 500 rows
-    """
-    def load_more_data(self, table, value):
-            max_value = table.verticalScrollBar().maximum()
-            current_value = table.verticalScrollBar().value()
+        def is_within_range(value1, value2, range_limit=20):
+            return abs(value1 - value2) <= range_limit
+    
+        if is_within_range(current_value, max_value):
+            if len(self.dataframe) > 500:
+                self.model_dict[table].update_search_text()
+                return
 
-            def is_within_range(value1, value2, range_limit=20):
-                return abs(value1 - value2) <= range_limit
-        
-            if is_within_range(current_value, max_value):
-                if len(self.dataframe) > 500:
-                    # self.model_dict[table].update_visible_rows()
-                    self.model_dict[table].update_search_text()
-
-
-    """
-    Setup of the data in their respective tables and tabs
-    """
-    def setup_data(self):
-        if not self.dataframe.is_empty():
-            if self.csv_name not in self.table_dict:
-                model = DataFrameTableModel(self.dataframe, self.column_checkboxes)
-
-                # Apply new model
-                table = QTableView()
-                table.setModel(model)
-                table.setSelectionBehavior(QTableView.SelectItems)
-                table.verticalHeader().setVisible(False)
-
-                # Make tab for loaded data - save model
-                self.model_dict[table] = model
-                self.table_dict[self.csv_name] = table
-                self.tab_widget.addTab(table, self.csv_name)
-
-                # Initial split: add the new tab widget to the QSplitter
-                if isinstance(self.index, int):
-                    if not self.first_split:
-                        self.first_split = True
-                        self.table_split.insertWidget(1, self.tab_widget)
-                    else:
-                        self.table_split.widget(1).addTab(table, self.csv_name)
-
-                # Signal Callers
-                table.selectionModel().selectionChanged.connect(self.update_view)
-                table.verticalScrollBar().valueChanged.connect(lambda value, table=table: self.load_more_data(table, value))
-                self.check_status(model)
-        else:
+    def setup_data(self) -> None:
+        """
+        Setup of the data in their respective tables and tabs
+        """
+        if self.dataframe.is_empty():
             print(f"{self.csv_name} is empty! Table unable to load!")
+            return
+        
+        if self.csv_name not in self.table_dict:
+            model = DataFrameTableModel(self.dataframe, self.column_checkboxes)
 
+            # Apply new model
+            table = QTableView()
+            table.setModel(model)
+            table.setSelectionBehavior(QTableView.SelectItems)
+            table.verticalHeader().setVisible(False)
 
-    """
-    Toggle the columns that the user selects in the options menu
-    """
-    def check_status(self, model):
+            # Make tab for loaded data - save model
+            self.model_dict[table] = model
+            self.table_dict[self.csv_name] = table
+            self.tab_widget.addTab(table, self.csv_name)
+
+            # Initial split: add the new tab widget to the QSplitter
+            if isinstance(self.index, int):
+                if not self.first_split:
+                    self.first_split = True
+                    self.table_split.insertWidget(1, self.tab_widget)
+                else:
+                    self.table_split.widget(1).addTab(table, self.csv_name)
+
+            # Signal Callers
+            table.selectionModel().selectionChanged.connect(self.update_view)
+            table.verticalScrollBar().valueChanged.connect(lambda value, table=table: self.load_more_data(table, value))
+            self.check_status(model)
+        return
+
+    def check_status(self, model) -> None:
+        """
+        Toggle the columns that the user selects in the options menu
+        """
         for checkbox in self.column_checkboxes.values():
             checkbox.stateChanged.connect(model.update_visible_columns)
+        return
 
-
-    """
-    Get the data for the user to select and save to CSV
-    """
     def update_view(self) -> pl.DataFrame:
+        """
+        Get the data for the user to select and save to CSV
+        """
         selected_data = {}
 
         for table_widget in self.table_dict.values():
@@ -600,12 +572,12 @@ class ExpandableText(QWidget):
                 header = model.headerData(col, Qt.Horizontal)
                 selected_data[header] = selected_data.get(header, []) + [model._dataframe[row, col]]
         self.saved_data = pl.DataFrame(selected_data)
+        return
 
-
-    """
-    Save CSV based on what user selected in table
-    """
     def save_csv(self) -> None:
+        """
+        Save CSV based on what user selected in table
+        """
         if self.saved_data is not None:
             if not self.saved_data.is_empty():
                 file_dialog = QFileDialog()
@@ -616,24 +588,24 @@ class ExpandableText(QWidget):
         return 
 
 
-"""
-Main Viewing Window of the loaded dataframes
-""" 
 class DataFrameViewer(QWidget):
+    """
+    Main Viewing Window of the loaded dataframes
+    """ 
     def __init__(self, data):
         super().__init__()
-        self.incr = 0
         self.data = data
+
         self._bool = False
+        self.model_dict = {}
+        self.table_dict = {}
+        self.label_dict = defaultdict(int)
         self.init_ui()
 
-
-    """
-    Setup the main window display
-    """
     def init_ui(self) -> None:
-        
-        # Windiow Size
+        """
+        Setup the main window display
+        """
         self.resize(1920, 1080)
     
         # Setup Layouts
@@ -641,18 +613,12 @@ class DataFrameViewer(QWidget):
         labels_layout = QVBoxLayout()
         center_layout = QHBoxLayout()
 
-        self.main_splitter = QSplitter()
-        self.table_split = QSplitter(Qt.Horizontal)
-
-        # Setup Widgets
         self.tab_widget = QTabWidget()
         scroll_area = QScrollArea()
         scroll_widget = QWidget()
 
-        # Setup tab dictionary
-        self.model_dict = {}
-        self.table_dict = {}
-        self.label_dict = defaultdict(int)
+        main_splitter = QSplitter()
+        self.table_split = QSplitter(Qt.Horizontal)
 
         # Search bar handler
         search_bar = QLineEdit()
@@ -667,26 +633,24 @@ class DataFrameViewer(QWidget):
         self.split_search = QCheckBox("Search Splitter")
         self.all_table = QCheckBox("Search All Tables")
 
+        # Buttons
+        csv_button = QPushButton("Save Data") #TODO Make a better placement
+        results_button = QPushButton("Load Search Results")
+        results_button.clicked.connect(self.load_search_results)
+
+        # Run the data through the expanded text list
+        for csv_name, df in self.data.items():
+            df = df.rename({col: col.lower() for col in df.columns})
+            text_widget = ExpandableText(self, self.tab_widget, df, csv_name, None)
+            labels_layout.addWidget(text_widget)
+
+        # Configure layouts
         label_layout.addWidget(self.index_label)
         checkbox_layout.addLayout(label_layout)
         checkbox_layout.addWidget(self.split_search)
         checkbox_layout.addWidget(self.all_table)
         checkbox_layout.addStretch()
 
-        # Buttons
-        self.csv_button = QPushButton("Save Data")
-        self.results_button = QPushButton("Load Search Results")
-        self.results_button.clicked.connect(self.load_search_results)
-
-        # Run the data through the expanded text list
-        for csv_name, df in self.data.items():
-            df = df.rename({col: col.lower() for col in df.columns})
-            text_widget = ExpandableText(df, csv_name, self.tab_widget, None,
-                                        self.table_split, self.model_dict,
-                                        self.table_dict, self.csv_button)
-            labels_layout.addWidget(text_widget)
-
-        # Configure layouts
         scroll_widget.setLayout(labels_layout)
         scroll_area.setWidget(scroll_widget)
         scroll_area.setWidgetResizable(True)
@@ -694,52 +658,49 @@ class DataFrameViewer(QWidget):
 
         # Create Splitter 
         self.table_split.addWidget(self.tab_widget)
-        
-        # Layout configure
-        self.main_splitter.addWidget(scroll_area)
-        self.main_splitter.addWidget(self.table_split)
-        self.main_splitter.setStretchFactor(0, 1)
+        main_splitter.addWidget(scroll_area)
+        main_splitter.addWidget(self.table_split)
+        main_splitter.setStretchFactor(0, 1)
 
         # Main Layout
-        center_layout.addWidget(self.main_splitter)
-        main_layout.addWidget(self.results_button)
+        center_layout.addWidget(main_splitter)
+        main_layout.addWidget(results_button)
         main_layout.addWidget(search_bar)
         main_layout.addLayout(checkbox_layout)
         main_layout.addLayout(center_layout)
         self.setLayout(main_layout)
+        self.tab_configure()
+        return
 
-        # Tab widget, double click to compare and able to be removed
+    def tab_configure(self) -> None:
+        """
+        Configure the tab functionaility
+        """
         self.tab_widget.setMovable(True)
         self.tab_widget.setTabsClosable(True)
         self.tab_widget.currentChanged.connect(self.update_label)
         self.tab_widget.tabBarDoubleClicked.connect(self.load_splitter)
         self.tab_widget.tabCloseRequested.connect(self.maintabCloseRequested)
         return
-
-        
-    """
-    Get the current dataframe of the modified table, hidden columns and all
-    """
+    
     def get_current_tab_dataframe(self) -> pl.DataFrame:
+        """
+        Get the current dataframe of the modified table, hidden columns and all
+        """
         current_index = self.tab_widget.currentIndex()
         if current_index != -1:
             current_tab = self.tab_widget.widget(current_index)
             if isinstance(current_tab, QTableView):
                 model = current_tab.model()
-            return model.get_dataframe()
+            return model.current_dataframe()
         return pl.DataFrame()
 
 
-    """
-    This allows for the user to double click on the tab and be able to compare a tab on the side
-    """
     def load_splitter(self, index) -> None:
+        """
+        This allows for the user to double click on the tab and be able to compare a tab on the side
+        """
         self._bool = True
-
-        # Get tab name on widget that needs split
-        tab_name = self.tab_widget.tabText(index)
-    
-        # Create new tab
         self.new_tab_widget = QTabWidget()
         dataframe = self.get_current_tab_dataframe()
 
@@ -748,26 +709,21 @@ class DataFrameViewer(QWidget):
 
         # Ensure dataframe is not empty before creating splitter item
         if not dataframe.is_empty():
-            new_name = f"{tab_name} - {index}"
-            ExpandableText(dataframe, new_name, self.new_tab_widget,
-                            index, self.table_split, self.model_dict,
-                            self.table_dict, self.csv_button)
+            new_name = f"{self.tab_widget.tabText(index)} - {index}"
+            ExpandableText(self, self.new_tab_widget, dataframe, new_name, index)
         return
 
-    """
-    Make all tabs after the first one closable
-    """
     def tabCloseRequested(self) -> None:
-        if self.tab_widget.count() > 1:
-            self.table_split.widget(1).setParent(None)
+        """
+        Make all tabs after the first one closable
+        """
+        self.table_split.widget(1).setParent(None)
         return
 
-
-    """
-    Main tab widget closable and search total label from label dict
-    """
     def maintabCloseRequested(self, index) -> None:
-        # Allows for a new instance of key to be added
+        """
+        Main tab widget closable and search total label from label dict
+        """
         del_tab = self.tab_widget.tabText(index)
         if self.table_dict.get(del_tab):
             del self.table_dict[del_tab]
@@ -776,26 +732,24 @@ class DataFrameViewer(QWidget):
         self.tab_widget.removeTab(index)
         return
 
-
-    """
-    User can type a string here and search all the loaded tables to highlight them
-    """
     def search_tables(self) -> None:
+        """
+        User can type a string here and search all the loaded tables to highlight them
+        """
         self.search_text = self.sender().text()
-
-        """
-        Check if user is search all existing tables or not
-        """
         def run_search(tab) -> None:
+            """
+            Check if user is search all existing tables or not
+            """
             if self.all_table.isChecked():
                 for idx in range(len(tab)):
                     index_table = tab.widget(idx)
                     self.table_model_set(index_table)
                 return
-            else:
-                current_tab = tab.currentIndex()
-                index_table = tab.widget(current_tab)
-                return self.table_model_set(index_table)
+            
+            current_tab = tab.currentIndex()
+            index_table = tab.widget(current_tab)
+            return self.table_model_set(index_table)
 
         # Run through all the tabs if they exist
         if self.tab_widget:
@@ -806,11 +760,10 @@ class DataFrameViewer(QWidget):
             run_search(self.new_tab_widget)
         return
 
-
-    """
-    Check if index table is valid before searching
-    """
     def table_model_set(self, index_table) -> QAbstractTableModel:
+        """
+        Check if index table is valid before searching
+        """
         if isinstance(index_table, QTableView):
             model = index_table.model()
             model.text = self.search_text
@@ -820,12 +773,10 @@ class DataFrameViewer(QWidget):
             self.found_items(search, index_table)
         return model
     
-
-    """
-    Process the number of found items in a table
-    """
     def found_items(self, search, index_table) -> None: 
-        # Populate label dictionary to know how many fields found in each table
+        """
+        Process the number of found items in a table
+        """
         index = self.tab_widget.indexOf(index_table)
         self.label_dict[index] = search
 
@@ -834,31 +785,23 @@ class DataFrameViewer(QWidget):
         self.update_label(curr_index)
         return
 
-    
-    """
-    Display the proper found items for individual tables focused
-    """
     def update_label(self, index) -> None:
-        
-        # Clear user selections when change tab
-        for table_widget in self.table_dict.values():
-            table_widget.selectionModel().clear()
-
+        """
+        Display the proper found items for individual tables focused
+        """
         if not self.label_dict:
             self.index_label.setText("No items found.")
-        else:
-            label_val = self.label_dict[index]
-            total_found = sum(self.label_dict.values())
-            self.index_label.setText(f"{label_val} of {total_found} total found in table.")
+            return
+
+        label_val = self.label_dict[index]
+        total_found = sum(self.label_dict.values())
+        self.index_label.setText(f"{label_val} of {total_found} total found in table.")
         return
     
-
-    """
-    Load the search results into the results window
-    """
     def load_search_results(self) -> None:
-
-        # Add to layout to tab
+        """
+        Load the search results into the results window
+        """
         self.tab_dict = {}
         self.result_tab = QTabWidget()
         self.central_widget = QWidget()
@@ -890,19 +833,16 @@ class DataFrameViewer(QWidget):
             # Defined model and data
             if self.tab_widget.tabText(index) not in self.tab_dict:
                 self.tab_dict[tab_name] = [index, self.results_table]
-            else:
-                return
+            return
         
         # Load the find items window
         self.central_widget.show()
+        return
 
-
-    """
-    Index to the right highlighted value when clicked
-    """
-    def on_clicked(self):
-
-        # Go to current table index
+    def on_clicked(self) -> None:
+        """
+        Index to the right highlighted value when clicked
+        """
         current_index = self.result_tab.currentIndex()
         tab_item = self.tab_dict[self.result_tab.tabText(current_index)]
         self.tab_widget.setCurrentIndex(tab_item[0])
@@ -913,13 +853,14 @@ class DataFrameViewer(QWidget):
 
         # Go to selected table index
         selected_indexes = tab_item[1].selectionModel().selectedIndexes()
-        if selected_indexes:
-            index = results_table.model().data(selected_indexes[0], Qt.DisplayRole)
-
-            # Scroll through the batch size value to get to the value of interest
-            val = current_table.verticalScrollBar()
-            for _ in range(int(index)):
-                val.setValue(val.maximum())
-            current_table.selectRow(int(index)-1)
-        else:
+        if not selected_indexes:
             return
+        
+        index = results_table.model().data(selected_indexes[0], Qt.DisplayRole)
+
+        # Scroll through the batch size value to get to the value of interest
+        val = current_table.verticalScrollBar()
+        for _ in range(int(index)):
+            val.setValue(val.maximum())
+        current_table.selectRow(int(index)-1)
+        return

@@ -1,0 +1,6 @@
+pyqt5
+polars
+py7zr
+sqlalchemy
+pytesseract
+opencv-python

@@ -114,7 +114,11 @@ class DataFrameTableModel(QAbstractTableModel):
         Get the current dataframe from the table, this also factors in hidden rows
         """
         visible_columns = [col for col, checkbox in self.column_checkboxes.items() if checkbox.isChecked()]
-        return pl.DataFrame(self._dataframe[visible_columns])
+        df = pl.DataFrame(self._dataframe[visible_columns])
+        dataframe = df.with_columns(
+            [pl.col(column).str.to_lowercase() for column in df.columns if df[column].dtype == pl.Utf8]
+        )
+        return dataframe
 
     def getColumnName(self, columnIndex) -> None:
         """
@@ -155,24 +159,17 @@ class DataFrameTableModel(QAbstractTableModel):
         Update the searched results by highlighting specific columns
         """
         data_dict = {} 
-        value = re.findall(r'\([^()]*\)|[^()]+', self.text)
+        value = re.findall(r'\([^()]*\)|[^()]+', self.text.lower())
     
         for val in value:
             self.index_dict, found_items = self.match_bool(val, data_dict) 
 
+        print(f"{found_items = }")
         # Start the search thread
         self.search_thread = SearchThread(self, self.index_dict)
         self.search_thread.search_finished.connect(self.handle_search_results)
         self.search_thread.start()
         return found_items
-
-    def index_row(self, df, columns, data_dict) -> dict:
-        """
-        Fill in the data dictionary with row indexes and column index for each found item
-        """
-
-        if columns not in df.columns:
-            return
         
     def index_row(self, df, columns, data_dict) -> dict:
         """
@@ -188,35 +185,33 @@ class DataFrameTableModel(QAbstractTableModel):
                 data_dict[row] = [cols]
         return data_dict
 
-
     def dynamic_expr(self, operator, value, column, filter_expr) -> filter:
         """
         Dynamically setup the expressions
         """
         # TODO Remove case senstive boundaries for data itself
-        lower_column = column.lower()
         if value.isdigit():
             match operator:
                 case '=':
-                    filter_expr = pl.col(lower_column) == int(value)
+                    filter_expr = pl.col(column) == int(value)
                 case '>':
-                    filter_expr = pl.col(lower_column) > int(value)
+                    filter_expr = pl.col(column) > int(value)
                 case '<':
-                    filter_expr = pl.col(lower_column) < int(value)
+                    filter_expr = pl.col(column) < int(value)
                 case '>=':
-                    filter_expr = pl.col(lower_column) >= int(value)
+                    filter_expr = pl.col(column) >= int(value)
                 case '<=':
-                    filter_expr = pl.col(lower_column) <= int(value)
+                    filter_expr = pl.col(column) <= int(value)
                 case '!=':
-                    filter_expr = pl.col(lower_column) != int(value)
+                    filter_expr = pl.col(column) != int(value)
                 case _ :
                     print(f"Invalid operator: {operator}")
         else:
             match operator:
                 case '=': 
-                    filter_expr = pl.col(lower_column) == value
+                    filter_expr = pl.col(column) == value
                 case '!=':
-                    filter_expr = pl.col(lower_column) != value
+                    filter_expr = pl.col(column) != value
                 case _ :
                     print(f"Invalid operator: {operator}")
         return filter_expr
@@ -268,7 +263,8 @@ class DataFrameTableModel(QAbstractTableModel):
         Detect whether the condition is split between and/or condition or none
         """
         combined_filter = None
-        df = self.current_dataframe()[:self.visible_rows]
+        dataframe = self.current_dataframe()
+        df = dataframe[:self.visible_rows]
 
         if 'and' in val:
             condition = re.split(r'(?:and|&|,)', val)
@@ -297,7 +293,8 @@ class DataFrameTableModel(QAbstractTableModel):
         """
         Get total found items to fill in the index label
         """
-        return len(self._dataframe.filter(dynam_expr))
+        dataframe = self.current_dataframe()
+        return len(dataframe.filter(dynam_expr))
 
     def handle_search_results(self, index_values):
         """

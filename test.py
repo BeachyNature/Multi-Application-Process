@@ -112,6 +112,7 @@ def match_bool(val, data_dict, combined_filter) -> dict:
         filter_expr = dynamic_expr(op, val, col, None)
 
     if filter_expr is not None:
+        print(f"{str(filter_expr) = }")
         df = df.filter(filter_expr)
         data_dict = index_row(df, col, data_dict)
         return data_dict
@@ -126,13 +127,7 @@ data_dict = {}
 combined_filter = None
 
 # input_string = "index = 11 and city = Rayville"
-input_string = "index < 10 (index > 5 and city = Rayville)"
-
-# Process each condition set
-if re.search(r'[()]', input_string) is not None:
-    # Find all matches of the pattern in the text
-    value = re.findall(r'\((.*?)\)', input_string)
-
+input_string = "city = Rayville"
 value = re.findall(r'\([^()]*\)|[^()]+', input_string)
 print(f"{value = }")
 

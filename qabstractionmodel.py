@@ -84,8 +84,8 @@ class DataFrameTableModel(QAbstractTableModel):
         """
         if role == Qt.DisplayRole:
             if self.column_checkboxes is not None:
-                column_name = self.visible_columns[index.column()]
-                return str(self._dataframe[index.row(), column_name])
+                column_index = self.visible_columns[index.column()]
+                return str(self._dataframe[index.row(), column_index])
             return str(self._dataframe[index.row(), index.column()])
 
         if role == Qt.BackgroundRole:
@@ -154,14 +154,8 @@ class DataFrameTableModel(QAbstractTableModel):
         """
         Update the searched results by highlighting specific columns
         """
-        data_dict = {}
-
-        # Newly created dataframe based on conditions
-        text = self.text.lower()
-        if re.search(r'[()]', text) is not None:
-            value = re.findall(r'\((.*?)\)', text)
-        
-        value = re.findall(r'\([^()]*\)|[^()]+', text)
+        data_dict = {} 
+        value = re.findall(r'\([^()]*\)|[^()]+', self.text)
     
         for val in value:
             self.index_dict, found_items = self.match_bool(val, data_dict) 
@@ -199,28 +193,30 @@ class DataFrameTableModel(QAbstractTableModel):
         """
         Dynamically setup the expressions
         """
+        # TODO Remove case senstive boundaries for data itself
+        lower_column = column.lower()
         if value.isdigit():
             match operator:
                 case '=':
-                    filter_expr = pl.col(column) == int(value)
+                    filter_expr = pl.col(lower_column) == int(value)
                 case '>':
-                    filter_expr = pl.col(column) > int(value)
+                    filter_expr = pl.col(lower_column) > int(value)
                 case '<':
-                    filter_expr = pl.col(column) < int(value)
+                    filter_expr = pl.col(lower_column) < int(value)
                 case '>=':
-                    filter_expr = pl.col(column) >= int(value)
+                    filter_expr = pl.col(lower_column) >= int(value)
                 case '<=':
-                    filter_expr = pl.col(column) <= int(value)
+                    filter_expr = pl.col(lower_column) <= int(value)
                 case '!=':
-                    filter_expr = pl.col(column) != int(value)
+                    filter_expr = pl.col(lower_column) != int(value)
                 case _ :
                     print(f"Invalid operator: {operator}")
         else:
             match operator:
                 case '=': 
-                    filter_expr = pl.col(column) == value
+                    filter_expr = pl.col(lower_column) == value
                 case '!=':
-                    filter_expr = pl.col(column) != value
+                    filter_expr = pl.col(lower_column) != value
                 case _ :
                     print(f"Invalid operator: {operator}")
         return filter_expr
@@ -271,7 +267,6 @@ class DataFrameTableModel(QAbstractTableModel):
         """
         Detect whether the condition is split between and/or condition or none
         """
-        # Chunked Dataframe
         combined_filter = None
         df = self.current_dataframe()[:self.visible_rows]
 
@@ -291,7 +286,8 @@ class DataFrameTableModel(QAbstractTableModel):
 
         # If there is no AND / OR statement
         if filter_expr is not None:
-            df = df.filter(filter_expr)
+            df =  df.filter(filter_expr)
+            print(f"{df = }")
             total_items = self.found_items(filter_expr)
             data_dict = self.index_row(df, col, data_dict)
             return data_dict, total_items

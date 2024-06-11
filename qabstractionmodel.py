@@ -115,6 +115,8 @@ class DataFrameTableModel(QAbstractTableModel):
         """
         visible_columns = [col for col, checkbox in self.column_checkboxes.items() if checkbox.isChecked()]
         df = pl.DataFrame(self._dataframe[visible_columns])
+
+        # TODO Should only process once as the dataframes are not changing
         dataframe = df.with_columns(
             [pl.col(column).str.to_lowercase() for column in df.columns if df[column].dtype == pl.Utf8]
         )
@@ -164,7 +166,6 @@ class DataFrameTableModel(QAbstractTableModel):
         for val in value:
             self.index_dict, found_items = self.match_bool(val, data_dict) 
 
-        print(f"{found_items = }")
         # Start the search thread
         self.search_thread = SearchThread(self, self.index_dict)
         self.search_thread.search_finished.connect(self.handle_search_results)
@@ -175,9 +176,10 @@ class DataFrameTableModel(QAbstractTableModel):
         """
         Fill in the data dictionary with row indexes and column index for each found item
         """
+        # Get the index values to iterate through
         rows = df['index'].to_list()
         cols = df.get_column_index(columns)
-    
+
         for row in rows:
             if row in data_dict:
                 data_dict[row].append(cols)
@@ -336,7 +338,6 @@ class ExpandableText(QWidget):
         """
         Run the tabs and know when to split or not
         """
-        # If the table is for inital setup or comparison load in
         if isinstance(self.index, int):
             self.setup_data()
             return

@@ -10,6 +10,26 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton,\
                             QLineEdit, QTableView, QCheckBox, QScrollArea,\
                             QTabWidget, QSplitter, QFileDialog, QLabel, QDialog
 
+class MyTableModel(QAbstractTableModel):
+    def __init__(self, data):
+        super(MyTableModel, self).__init__()
+        self._data = data
+
+    def rowCount(self, parent=None):
+        return len(self._data)
+
+    def columnCount(self, parent=None):
+        return len(self._data.columns)
+
+    def data(self, index, role=Qt.DisplayRole):
+        if role == Qt.DisplayRole:
+            return str(self._data[index.row(), index.column()])
+        return 
+
+    def headerData(self, section, orientation, role=Qt.DisplayRole):
+        if role == Qt.DisplayRole:
+            if orientation == Qt.Horizontal:
+                return str(self._data.columns[section])
 
 class SearchThread(QThread):
     """
@@ -142,9 +162,9 @@ class DataFrameTableModel(QAbstractTableModel):
 
     def canFetchMore(self, index):
         """
-        Update the next 100 visible rows
+        Make sure visible rows remains less than dataframe
         """
-        return self.visible_rows < len(self._dataframe)
+        return case
 
     def fetchMore(self, index):
         """
@@ -236,9 +256,9 @@ class DataFrameTableModel(QAbstractTableModel):
             combined_filter = filter_expr if combined_filter is None else combined_filter | filter_expr
         return combined_filter
 
-
-    def condition_set(self, val, df, condition, pattern,
-                      combined_filter, data_dict, _bool) -> dict:
+    def condition_set(self, val, df, condition,
+                        combined_filter, data_dict,
+                        _bool) -> dict:
         """
         Split the conditions up into sets and combine back together
         """
@@ -267,7 +287,7 @@ class DataFrameTableModel(QAbstractTableModel):
         combined_filter = None
         dataframe = self.current_dataframe()
         df = dataframe[:self.visible_rows]
-
+        
         if 'and' in val:
             condition = re.split(r'(?:and|&|,)', val)
             return self.condition_set(val, df, condition, 
@@ -284,10 +304,9 @@ class DataFrameTableModel(QAbstractTableModel):
 
         # If there is no AND / OR statement
         if filter_expr is not None:
-            df =  df.filter(filter_expr)
-            print(f"{df = }")
             total_items = self.found_items(filter_expr)
-            data_dict = self.index_row(df, col, data_dict)
+            data_dict = self.index_row(df.filter(filter_expr),
+                                       col, data_dict)
             return data_dict, total_items
         return
 
@@ -703,23 +722,33 @@ class DataFrameViewer(QWidget):
         This allows for the user to double click on the tab and be able to compare a tab on the side
         """
         self._bool = True
+        new_name = f"{self.tab_widget.tabText(index)} - {index}"
+
+        if new_name in self.table_dict:
+            return
+        
         self.new_tab_widget = QTabWidget()
         dataframe = self.get_current_tab_dataframe()
 
         self.new_tab_widget.setTabsClosable(True)
         self.new_tab_widget.tabCloseRequested.connect(self.tabCloseRequested)
-
+    
         # Ensure dataframe is not empty before creating splitter item
-        if not dataframe.is_empty():
-            new_name = f"{self.tab_widget.tabText(index)} - {index}"
-            ExpandableText(self, self.new_tab_widget, dataframe, new_name, index)
+        if new_name not in self.table_dict:
+            self.table_dict[new_name] = ExpandableText(self, self.new_tab_widget,
+                                                  dataframe, new_name, index)
+        print(f"{self.table_dict = }")
         return
 
-    def tabCloseRequested(self) -> None:
+    def tabCloseRequested(self, index) -> None:
         """
         Make all tabs after the first one closable
         """
-        self.table_split.widget(1).setParent(None)
+        del_tab = self.tab_widget.tabText(index)
+        if self.table_dict.get(del_tab):
+            del self.table_dict[del_tab]
+            self.table_split.widget(1).setParent(None)
+
         return
 
     def maintabCloseRequested(self, index) -> None:
@@ -816,29 +845,31 @@ class DataFrameViewer(QWidget):
             data = model.get_result()
 
             # Make table model and apply
-            model = DataFrameTableModel(data, None)
-
+            model = MyTableModel(data)
             self.results_table = QTableView()
             self.results_table.setModel(model)
-
-            # Formatters
-            self.results_table.verticalHeader().setVisible(False)
+            self.results_tab_config(model)
+            
+            # Defined model and data
+            if self.tab_widget.tabText(index) not in self.tab_dict:
+                self.tab_dict[tab_name] = [index, self.results_table]
 
             # Add new tab
             find_items_layout.addWidget(self.result_tab)
             self.result_tab.addTab(self.results_table, tab_name)
 
-            # Signal Callers
-            self.results_table.setSelectionBehavior(QTableView.SelectRows)
-            self.results_table.selectionModel().selectionChanged.connect(self.on_clicked)
-
-            # Defined model and data
-            if self.tab_widget.tabText(index) not in self.tab_dict:
-                self.tab_dict[tab_name] = [index, self.results_table]
-            return
-        
         # Load the find items window
         self.central_widget.show()
+        return
+    
+    def results_tab_config(self, model) -> None:
+        """
+        Configure signals and style of tab widget
+        """
+        self.results_table.verticalHeader().setVisible(False)
+        self.results_table.setSelectionBehavior(QTableView.SelectRows)
+        self.results_table.selectionModel().selectionChanged.connect(self.on_clicked)
+        self.results_table.verticalScrollBar().valueChanged.connect(lambda: self.load_next_batch(model))
         return
 
     def on_clicked(self) -> None:
@@ -846,10 +877,11 @@ class DataFrameViewer(QWidget):
         Index to the right highlighted value when clicked
         """
         current_index = self.result_tab.currentIndex()
-        tab_item = self.tab_dict[self.result_tab.tabText(current_index)]
-        self.tab_widget.setCurrentIndex(tab_item[0])
+        focused_tab = self.result_tab.tabText(current_index)
+        tab_item = self.tab_dict[focused_tab]
 
-        # Defined tables
+        # Focus on table
+        self.tab_widget.setCurrentIndex(tab_item[0])
         current_table = self.tab_widget.widget(tab_item[0])
         results_table = self.result_tab.widget(tab_item[0])
 
@@ -866,3 +898,16 @@ class DataFrameViewer(QWidget):
             val.setValue(val.maximum())
         current_table.selectRow(int(index)-1)
         return
+
+    def load_next_batch(self, model) -> None:
+        """
+        Load the next batch of data for the results window to select
+        """
+        max_value = self.results_table.verticalScrollBar().maximum()
+        current_value = self.results_table.verticalScrollBar().value()
+
+        def is_within_range(value1, value2, range_limit=20):
+            return abs(value1 - value2) <= range_limit
+    
+        if is_within_range(current_value, max_value):
+            return

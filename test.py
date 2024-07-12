@@ -1,142 +1,131 @@
-import re
-import itertools
-import polars as pl
+import sys
+import cv2
+from PyQt5.QtCore import QTimer, Qt, QSize
+from PyQt5.QtGui import QImage, QPixmap, QIcon
+from PyQt5.QtWidgets import QApplication, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QToolBar, QAction, QSizePolicy
 
+class VideoPlayer(QWidget):
+    def __init__(self, video_paths):
+        super().__init__()
 
-"""
-Get the index row and column values for highlighting
-"""
-def index_row(df, columns, data_dict) -> dict:
-    rows = df['index'].to_list()
-    for row in rows:
-        if row in data_dict:
-            data_dict[row].append(columns)
-        else:
-            data_dict[row] = [columns]
-    return data_dict
+        self.video_paths = video_paths
+        self.caps = [cv2.VideoCapture(video_path) for video_path in video_paths]
+        self.fps_list = [cap.get(cv2.CAP_PROP_FPS) for cap in self.caps]
+        self.delays = [int(1000 / fps) for fps in self.fps_list]
+        self.min_delay = min(self.delays)
 
+        self.main_video_index = None
+        self.image_labels = [QLabel() for _ in video_paths]
+        self.toolbar_actions = []
 
-"""
-Dynamically setup the expressions
-"""
-def dynamic_expr(operator, value, column, filter_expr) -> filter:
-    if value.isdigit():
-        match operator:
-            case '=':
-                filter_expr = pl.col(column) == int(value)
-            case '>':
-                filter_expr = pl.col(column) > int(value)
-            case '<':
-                filter_expr = pl.col(column) < int(value)
-            case '>=':
-                filter_expr = pl.col(column) >= int(value)
-            case '<=':
-                filter_expr = pl.col(column) <= int(value)
-            case '!=':
-                filter_expr = pl.col(column) != int(value)
-            case _ :
-                print(f"Invalid operator: {operator}")
-    else:
-        match operator:
-            case '=': 
-                filter_expr = pl.col(column) == value
-            case '!=':
-                filter_expr = pl.col(column) != value
-            case _ :
-                print(f"Invalid operator: {operator}")
-    return filter_expr
+        for label, cap in zip(self.image_labels, self.caps):
+            label.setScaledContents(True)
+            label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            label.mousePressEvent = self.create_mouse_event_handler(label)
+            if cap.isOpened():
+                action = self.create_toolbar_action(label)
+                if action:
+                    self.toolbar_actions.append(action)
 
+        self.main_layout = QVBoxLayout()
+        self.video_layout = QHBoxLayout()
+        for label in self.image_labels:
+            self.video_layout.addWidget(label)
+        self.main_layout.addLayout(self.video_layout)
 
-"""
-Process dataframe and index rows
-"""
-def process_filter(df, col, data_dict, combined_filter):
-    df = df.filter(combined_filter)
-    data_dict = index_row(df, col, data_dict)
-    return data_dict
+        self.toolbar = QToolBar()
+        for action in self.toolbar_actions:
+            self.toolbar.addAction(action)
+        self.main_layout.addWidget(self.toolbar)
 
+        self.setLayout(self.main_layout)
 
-"""
-Split the conditions up into sets and combine back together
-"""
-def condition_set(init_val, df, condition, pattern,
-                combined_filter, data_dict, _bool) -> dict:
-    print("NICE", condition)
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_frames)
+        self.timer.start(self.min_delay)
 
-    for cond_set in condition:
-        matches = re.findall(pattern, cond_set)
-        for match in matches:
-            col = re.sub(r"\(|\)", "", match[0].strip())
-            op = re.sub(r"\(|\)", "", match[1].strip())
-            val = re.sub(r"\(|\)", "", match[2].strip())
-        filter_expr = dynamic_expr(op, val, col, None)
+    def create_mouse_event_handler(self, label):
+        def mouse_event_handler(event):
+            if event.button() == Qt.LeftButton:
+                index = self.image_labels.index(label)
+                if self.main_video_index is None:
+                    self.main_video_index = index
+                    self.switch_to_main(index)
+                else:
+                    self.switch_to_main(index)
+        return mouse_event_handler
 
-        if _bool:
-            combined_filter = filter_expr if combined_filter is None else combined_filter | filter_expr
-        else:
-            combined_filter = filter_expr if combined_filter is None else combined_filter & filter_expr
+    def create_toolbar_action(self, label):
+        index = self.image_labels.index(label)
+        pixmap = self.get_video_frame(index)
+        if pixmap:
+            action = QAction(QIcon(pixmap), "", self)
+            action.triggered.connect(lambda: self.switch_to_main(index))
+            return action
 
-        if re.search(r'[()]', init_val) is not None:
-            data_dict = process_filter(df, col, data_dict, combined_filter)
+    def get_video_frame(self, index):
+        cap = self.caps[index]
+        if cap is not None:
+            ret, frame = cap.read()
+            if ret:
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                h, w, ch = frame.shape
+                bytes_per_line = ch * w
+                qt_image = QImage(frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
+                pixmap = QPixmap.fromImage(qt_image)
+                return pixmap.scaled(QSize(100, 100), Qt.KeepAspectRatio)
+            else:
+                cap.release()
+                self.caps[index] = None
+        return None
 
-    data_dict = process_filter(df, col, data_dict, combined_filter)
-    return data_dict
+    def switch_to_main(self, index):
+        if self.main_video_index is not None:
+            current_main_label = self.image_labels[self.main_video_index]
+            self.video_layout.removeWidget(current_main_label)
+            current_main_label.setParent(None)
+            if self.main_video_index < len(self.toolbar_actions):
+                action = self.toolbar_actions[self.main_video_index]
+                if action:
+                    self.toolbar.addAction(action)
 
+        self.main_video_index = index
+        new_main_label = self.image_labels[index]
+        if index < len(self.toolbar_actions):
+            action = self.toolbar_actions[index]
+            if action:
+                self.toolbar.removeAction(action)
+        self.video_layout.addWidget(new_main_label)
 
-"""
-Detect whether the condition is split between and/or condition or none
-"""
-def match_bool(val, data_dict, combined_filter) -> dict:
-    # Dataframe setup
-    df = pl.DataFrame({'index': [11, 6, 3, 8, 12, 2], 'city': ['Rayville', 'New York', 'Chicago', 'Rayville', 'LosAngeles', 'Rayville']})
+    def update_frames(self):
+        for i, cap in enumerate(self.caps):
+            if cap is not None:
+                ret, frame = cap.read()
+                if ret:
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    h, w, ch = frame.shape
+                    bytes_per_line = ch * w
+                    qt_image = QImage(frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
+                    pixmap = QPixmap.fromImage(qt_image)
+                    self.image_labels[i].setPixmap(pixmap)
+                    if i != self.main_video_index:
+                        action = self.toolbar_actions[i]
+                        if action:
+                            action.setIcon(QIcon(pixmap.scaled(QSize(100, 100), Qt.KeepAspectRatio)))
+                else:
+                    cap.release()
+                    self.caps[i] = None
 
-    print(f"{val = }")
-    pattern = r'\s*([^\s=><!]+)\s*([=><!]+)\s*([^\s=><!]+)\s*'
-
-    if 'and' in val:
-        print("NICE")
-        condition = re.split(r'(?:and|&|,)', val)
-        data_dict =  condition_set(val, df, condition, pattern,
-                                combined_filter, data_dict, False)
-        return data_dict
-
-    elif 'or' in val:
-        print("EPIC")
-        condition = re.split(r'\bor\b', val)
-        data_dict =  condition_set(val, df, condition, pattern,
-                                combined_filter, data_dict, True)
-        return data_dict
-    else:
-        print("COOL")
-        col, op, val = map(str.strip, val.split())
-        filter_expr = dynamic_expr(op, val, col, None)
-
-    if filter_expr is not None:
-        print(f"{str(filter_expr) = }")
-        df = df.filter(filter_expr)
-        data_dict = index_row(df, col, data_dict)
-        return data_dict
-    return
-
-
-# TEST --------------------------
-# final_df = pl.col('index') < 10 | (pl.col('index') > 5 & (pl.col('city') == 'Rayville'))
-# epic = df.filter(final_df)
-
-data_dict = {}
-combined_filter = None
-
-# input_string = "index = 11 and city = Rayville"
-input_string = "city = Rayville"
-value = re.findall(r'\([^()]*\)|[^()]+', input_string)
-print(f"{value = }")
-
-for val in value:
-    data_dict = match_bool(val, data_dict, combined_filter) 
-    print(f"{data_dict = }")
-
-for key, value in (
-    itertools.chain.from_iterable(
-        (itertools.product((k,), v) for k, v in data_dict.items()))):
-            print(key)
-            print(value)
+        if all(cap is None for cap in self.caps):
+            self.timer.stop()
+    
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    video_paths = [
+        "C:/Users/tycon/Downloads/Vids/video0_45_1.mp4",  # Replace with your first video file path
+        "C:/Users/tycon/Downloads/Vids/doomcoomer.mp4",  # Replace with your second video file path
+        "C:/Users/tycon/Downloads/Vids/party_time.mp4"    # Replace with your third video file path
+    ]
+    player = VideoPlayer(video_paths)
+    player.show()
+    sys.exit(app.exec_())

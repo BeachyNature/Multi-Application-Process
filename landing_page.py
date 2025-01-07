@@ -1,11 +1,11 @@
 from PyQt5.QtWidgets import QMainWindow, QPushButton, QVBoxLayout, QWidget, QCheckBox
 
-import login_window
-import animated_lineplot
-import three_d_plot
-import multiple_csv
+import __main__
+import animated_lineplot as animated_lineplot
+import Plots.three_d_plot as three_d_plot
+import Local_DB_Viwer.multiple_csv as multiple_csv
 import pkl_selector
-import video_replay
+import VideoPlayer.video_replay as video_replay
 
 
 """
@@ -17,7 +17,7 @@ class MainWindow(QMainWindow):
 
         # Setup data
         self._bool = False
-        self.user_instance = login_window.LoginWindow()
+        self.user_instance = __main__.LoginWindow()
 
         self.pre_window = QWidget()
 
@@ -85,7 +85,7 @@ class MainWindow(QMainWindow):
     def check_button_act(self, state):
         sender = self.sender()
         if sender.isEnabled() and self._bool:
-            login_window.LoginWindow.save_checkbox_state(self.user_instance, sender.text(), state)
+            __main__.LoginWindow.save_checkbox_state(self.user_instance, sender.text(), state)
 
 
     """
@@ -106,7 +106,7 @@ class MainWindow(QMainWindow):
 Gets the user configuration settings, accessible from other classes/files
 """
 def update_file():
-    user_instance = login_window.LoginWindow()
-    user = login_window.LoginWindow.load_users(user_instance)
+    user_instance = __main__.LoginWindow()
+    user = __main__.LoginWindow.load_users(user_instance)
     config = dict(list(user.items())[1:])
     return config

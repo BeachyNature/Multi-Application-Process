@@ -3,10 +3,10 @@ from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QMutex, QMutexLocker
 from PyQt5.QtGui import QPixmap, QImage
 from PIL import Image
 import pytesseract
-import py7zr
-import os
 import shutil
+import py7zr
 import cv2
+import os
 
 ######## Uncomment this if you recieved error that Tesseract is not in your Path. #############
 # pytesseract.pytesseract.tesseract_cmd = "C:/Program Files/Tesseract-OCR/tesseract.exe"
@@ -517,11 +517,10 @@ class VideoSelector(QWidget):
         if file_path: self.list_files_in_7z(file_path)
         return
 
-
-    """
-    Get the extracted video files
-    """
     def list_files_in_7z(self, archive_path) -> None:
+        """
+        Removes extracted save files
+        """
         try:
             if not os.path.exists(self.extracted_folder): #TEMP folder
                 os.makedirs(self.extracted_folder)
@@ -541,11 +540,10 @@ class VideoSelector(QWidget):
         except Exception as e:
             self.list_widget.clear()
             self.list_widget.addItem(f"Error: {e}")
-
-
-    """
-    Removes extracted save files
-    """
+        
     def clear_cache(self) -> None:
+        """
+        Removes extracted save files
+        """
         shutil.rmtree(self.extracted_folder)
         return

@@ -1,6 +1,7 @@
 # Ignore specific file
 user.json
 
+logs/
 __pycache__/
 *.pyc
 *.pyo

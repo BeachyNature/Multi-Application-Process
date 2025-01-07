@@ -1,1 +1,1 @@
-Python program that contains multiple different analysis tools for the user to digust and break down data of their needs.
+Extensive PyQt application that takes advantage of the different features avaliable within Qt5. This application contains sever intuitive widgets to fit a range of usecases.

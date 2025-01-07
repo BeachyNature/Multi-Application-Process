@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import QPushButton, QVBoxLayout, QCheckBox, QProgressBar,\
                             QLabel, QFileDialog, QApplication, QWidget, QTabWidget
 
 # Local import
-import qabstractionmodel
+import Local_DB_Viwer.table_viewer as table_viewer
 
 class FileDialog(QWidget):
     """
@@ -53,7 +53,7 @@ class FileDialog(QWidget):
         self.dict = {}
         self.single_file() if not self._bool else self.multi_file()
 
-        self.table_model = qabstractionmodel.DataFrameViewer(self.dict)
+        self.table_model = table_viewer.DataFrameViewer(self.dict)
         self.table_model.show()
         return
 
